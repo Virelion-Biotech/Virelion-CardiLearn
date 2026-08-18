@@ -1,0 +1,12 @@
+{
+  "benchmark_id": "mi-vs-sham-priority",
+  "version": "1.0",
+  "task": "classification",
+  "target": "injury_label",
+  "split_policy": "animal",
+  "group_key": "biological_replicate_id",
+  "modalities": ["single-cell RNA-seq", "single-nucleus RNA-seq", "spatial transcriptomics"],
+  "test_labels_private": false,
+  "source_datasets": ["GSE153480", "GSE135310", "GSE216211", "GSE106472", "GSE269054"],
+  "metrics": ["auroc", "auprc", "balanced_accuracy", "sensitivity", "specificity", "brier_score", "ece"]
+}
