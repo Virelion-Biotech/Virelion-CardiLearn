@@ -14,7 +14,6 @@ import pandas as pd
 
 from .splitting import SplitIndices
 
-
 _ALLOWED_TASKS = {
     "classification", "regression", "retrieval", "representation",
     "detection", "characterization", "generalization",
@@ -94,42 +93,42 @@ def holdout_by_column(
     column: str,
     held_out_value: Any,
     *,
+    group_column: str,
     validation_fraction: float = 0.20,
     random_state: int = 42,
 ) -> SplitIndices:
-    """Create an external-style test set from one metadata level.
-
-    The held-out level is never used for model selection. The remaining rows are
-    partitioned into train/validation using deterministic group-aware splitting.
-    """
+    """Hold out one metadata level, while keeping groups intact in development."""
     from .config import SplitConfig
     from .splitting import split_frame
 
     if column not in frame.columns:
         raise KeyError(f"holdout column not found: {column}")
+    if group_column not in frame.columns:
+        raise KeyError(f"group column not found: {group_column}")
+    if not 0 < validation_fraction < 1:
+        raise ValueError("validation_fraction must be between 0 and 1")
+
     test = frame.index[frame[column] == held_out_value].to_numpy()
     dev_mask = frame[column] != held_out_value
     dev_positions = frame.index[dev_mask].to_numpy()
     if len(test) == 0:
         raise ValueError(f"no rows found for held-out value {held_out_value!r}")
-    if len(dev_positions) < 3:
-        raise ValueError("not enough development rows after holdout")
 
     dev = frame.loc[dev_positions].reset_index(drop=True)
-    if "group_id" in dev.columns:
-        groups = dev["group_id"]
-    elif "sample_id" in dev.columns:
-        groups = dev["sample_id"]
-    else:
-        groups = None
+    groups = dev[group_column]
+    if groups.nunique() < 3:
+        raise ValueError("development data require at least three biological groups")
+
+    # Create train/validation inside development; the held-out metadata level remains untouched.
     cfg = SplitConfig(
         test_size=validation_fraction,
         validation_size=validation_fraction,
         random_state=random_state,
         stratify=False,
     )
-    local = split_frame(dev, cfg, target=dev.iloc[:, 0], groups=groups)
-    # split_frame's test becomes the development validation partition here.
-    train_local = dev_positions[local.train]
-    val_local = dev_positions[local.test]
-    return SplitIndices(train=train_local, validation=val_local, test=test)
+    local = split_frame(dev, cfg, groups=groups)
+    return SplitIndices(
+        train=dev_positions[local.train],
+        validation=dev_positions[local.test],
+        test=test,
+    )
