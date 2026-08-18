@@ -1,0 +1,8 @@
+{
+  "task": "regression",
+  "model": "hist_gradient_boosting",
+  "target_column": "phenotype_value",
+  "group_column": "subject_id",
+  "random_state": 42,
+  "split": {"test_size": 0.2, "validation_size": 0.2, "random_state": 42, "stratify": false}
+}
