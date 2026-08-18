@@ -6,7 +6,7 @@ recreated from a single manifest.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 
@@ -37,7 +37,7 @@ class TrainingConfig:
     target_column: str = "target"
     group_column: str | None = "group_id"
     random_state: int = 42
-    split: SplitConfig = SplitConfig()
+    split: SplitConfig = field(default_factory=SplitConfig)
 
     def __post_init__(self) -> None:
         if self.task not in {"classification", "regression"}:
