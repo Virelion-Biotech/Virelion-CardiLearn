@@ -2,79 +2,93 @@
 
 **Real-data cardiac machine learning for reproducible learning, benchmarking, and transfer.**
 
-CardiLearn is the learning layer of the Virelion cardiac ML stack. It turns heterogeneous cardiac observations into reproducible models while enforcing scientific evaluation boundaries: subject-aware splitting, train-only preprocessing, explicit dataset contracts, provenance, and independent evaluation handoff to CardiEval.
+CardiLearn is the learning layer of the Virelion cardiac ML ecosystem. It trains models from real cardiac observations while enforcing scientific boundaries between training, model selection, and held-out evaluation.
 
-## What it can do now
+## Current capabilities
 
-- **Tabular:** phenotype, clinical, functional, ECG-derived and imaging-derived feature tables.
-- **Omics:** sample × feature matrices with stable transformation hooks.
-- **ECG / time series:** waveform containers and summary feature extraction.
-- **Imaging:** array-based image contracts and normalization hooks.
-- **Tasks:** binary/multiclass classification and regression baselines.
-- **Splitting:** group-aware random splits and forward-chaining longitudinal validation.
-- **Validation:** duplicate-ID, missingness, target integrity, and group-leakage checks.
-- **Modeling:** logistic regression, ridge regression, and histogram gradient boosting.
-- **Evaluation:** cross-validation, calibration, permutation importance, task metrics, and benchmark tables.
-- **Representation learning:** dependency-light PCA embeddings with a stable interface for future deep encoders.
-- **Reproducibility:** dataset cards, run manifests, configuration, and registry layout.
+### Data and provenance
+- Explicit dataset contracts with target, sample, and subject/study grouping metadata.
+- CSV and modality-table adapters for cardiac feature matrices.
+- Dataset fingerprints and reproducibility metadata.
+- Multimodal alignment by unique sample ID.
+- Integrity checks for missingness, duplicate IDs, missing targets, and group leakage.
 
-## Scientific guardrails
+### Learning
+- Classification: logistic regression, histogram gradient boosting, MLP.
+- Regression: ridge, histogram gradient boosting, MLP.
+- Train-fitted preprocessing for mixed numeric/categorical tables.
+- Group-aware train/validation/test splitting.
+- Development-only cross-validation and model selection.
+- High-dimensional omics feature selection + PCA.
+- ECG/time-series summary feature extraction.
+- Probability calibration and calibration metrics.
+- Validation-set permutation importance.
+- PCA representation-learning baseline.
 
-CardiLearn deliberately separates model development from final assessment. The validation set is for model selection; the held-out test set is not touched until the model is frozen. Subject-level groups should normally define boundaries, and longitudinal studies can use chronological forward validation. CardiEval can then independently score exported predictions.
+### Interoperability
+- Portable model artifacts and manifests.
+- Stable `cardilearn.predictions.v1` prediction export for CardiEval.
+- Configuration and split assignments saved with runs.
+- Test data are **not evaluated during ordinary training**. Held-out evaluation is explicit and verifies the dataset fingerprint.
+
+## Scientific contract
+
+1. **Groups do not cross evaluation boundaries.** Patient, donor, animal, experiment, or study identifiers can define partitions.
+2. **The test partition is sacred.** Model selection occurs using training/development data only.
+3. **Preprocessing is fitted on training data.** This includes imputation, scaling, supervised feature selection, and dimensionality reduction.
+4. **Every result is reproducible.** Configuration, feature schema, split indices, dataset fingerprint, metrics, and model artifact travel together.
+5. **Evaluation is independent.** CardiLearn produces models and frozen predictions; CardiEval owns independent statistical comparison.
 
 ## Repository layout
 
 ```text
 cardilearn/
-  config.py          # experiment configuration
-  schema.py          # dataset + feature contracts
-  data.py            # dataframe contracts
-  loaders.py         # CSV/TSV/Parquet/Feather ingestion
-  modalities.py      # omics, waveform, image containers
-  featurization.py   # modality-level summaries
-  splitting.py       # group-aware splitting
-  temporal.py        # forward-chaining validation
-  preprocessing.py   # train-fitted preprocessing
-  models.py          # baseline model registry
-  metrics.py         # task metrics
-  advanced.py        # CV, calibration, permutation importance
-  embeddings.py      # representation-learning baseline
-  validation.py      # dataset integrity checks
-  benchmark.py       # model comparison protocol
-  dataset_card.py    # provenance metadata
-  artifacts.py       # portable artifacts
-  registry.py        # run/model registry
-  training.py        # training orchestration
-  cli.py             # command-line interface
+  adapters.py       # modality-table loading and multimodal alignment
+  artifacts.py      # model/run serialization
+  benchmarks.py     # leakage-safe cross-validation
+  calibration.py    # calibration and ECE/Brier metrics
+  config.py         # experiment configuration
+  data.py           # dataset contracts
+  ecg.py            # ECG/time-series summary features
+  explainability.py # validation-set permutation importance
+  io.py             # CardiEval prediction interchange
+  metrics.py        # classification/regression metrics
+  models.py         # model registry
+  neural.py         # MLP neural baseline
+  omics.py          # high-dimensional omics preprocessing
+  provenance.py     # fingerprints/runtime metadata
+  selection.py      # development-only model selection
+  splitting.py      # leakage-safe deterministic splitting
+  training.py       # end-to-end training and held-out evaluation
+  validation.py     # dataset integrity checks
+configs/            # example experiments
+configs/benchmarks/ # benchmark templates
 
-tests/               # unit + scientific invariant tests
-configs/             # reproducible experiment examples
-.github/workflows/   # CI
+docs/               # architecture and experiment protocol
+tests/              # scientific invariants and integration tests
+.github/workflows/  # CI
 ```
 
 ## Quick start
 
 ```bash
 python -m pip install -e .
-python -m cardilearn --help
+cardilearn models --task classification
+cardilearn train --data data.csv --target outcome --group patient_id --model hist_gradient_boosting --output runs/example
 pytest -q
 ```
 
-Example configuration: `configs/example-classification.json`.
-
-## Roadmap
-
-The foundation is intentionally modality-neutral. The next layers are dataset-specific loaders for CardiBench-compatible cardiac datasets, high-dimensional omics reduction, ECG foundation encoders, image encoders, multimodal fusion, hyperparameter optimization, uncertainty estimation, model cards, and direct CardiEval export.
+To evaluate a frozen held-out result, use `evaluate_held_out_test` after model selection. Do not incorporate test metrics into tuning or feature selection.
 
 ## Ecosystem
 
-- **CardiAgent** — challenge-agent generation
+- **CardiAgent** — cardiac challenge-agent generation
 - **CardiVex** — challenge detection and characterization
-- **CardiBench** — curated datasets and canonical splits
+- **CardiBench** — curated benchmarks and canonical splits
 - **CardiLearn** — real-data model training
 - **CardiEval** — independent evaluation and statistical comparison
-- **CardiAtlas** — cardiac literature and knowledge base
-- **CardiSim** — synthetic trajectory simulation
+- **CardiAtlas** — literature and cardiac omics/phenotype knowledge base
+- **CardiSim** — synthetic cardiac trajectory simulation
 - **CardiTrace** — provenance and reproducibility
 - **CardiBridge** — cross-component schemas and APIs
 
