@@ -1,0 +1,12 @@
+{
+  "benchmark_id": "cardiac-regeneration-generalization",
+  "version": "0.1-template",
+  "task": "generalization",
+  "target": "regeneration_state",
+  "split_policy": "animal",
+  "group_key": "biological_replicate_id",
+  "modalities": ["single-cell RNA-seq", "single-nucleus RNA-seq", "spatial transcriptomics"],
+  "test_labels_private": false,
+  "source_datasets": [],
+  "metrics": ["auroc", "auprc", "balanced_accuracy"]
+}
