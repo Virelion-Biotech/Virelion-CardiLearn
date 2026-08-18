@@ -1,0 +1,17 @@
+{
+  "task": "regression",
+  "target_column": "target",
+  "group_column": "patient_id",
+  "primary_metric": "rmse",
+  "n_splits": 5,
+  "test_size": 0.2,
+  "validation_size": 0.2,
+  "random_state": 42,
+  "candidate_models": [
+    "ridge",
+    "hist_gradient_boosting",
+    "mlp"
+  ],
+  "final_test": "held_out_once_after_model_selection",
+  "selection_direction": "minimize"
+}
