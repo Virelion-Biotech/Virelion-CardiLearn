@@ -1,0 +1,77 @@
+version: "1.0"
+benchmark_id: "mi-sham-priority-matrix"
+status: "ready_for_materialization"
+primary_task: "binary_classification"
+target: "injury_label"
+positive_label: "MI"
+negative_label: "sham"
+group_key: "biological_group_id"
+required_columns:
+  - sample_id
+  - biological_group_id
+  - study_id
+  - injury_label
+  - timepoint
+  - age_or_stage
+  - species
+  - modality
+
+source_datasets:
+  - accession: "GSE153480"
+    priority: 1
+    modality: "scRNA-seq"
+    purpose: "neonatal regenerative vs non-regenerative injury classification"
+    valid_conditions: ["MI", "sham"]
+    external_holdouts: ["study", "age_or_stage", "timepoint"]
+    notes: "Keep P1 and P8 explicit; do not collapse regenerative P1 and non-regenerative P8 before analysis."
+  - accession: "GSE216211"
+    priority: 2
+    modality: "scRNA-seq"
+    purpose: "adult macrophage-focused MI vs sham classification"
+    valid_conditions: ["MI", "sham"]
+    excluded_conditions: ["MI-E"]
+    external_holdouts: ["study"]
+    notes: "MI-E is a distinct perturbation and must not be silently recoded as MI."
+  - accession: "GSE269054"
+    priority: 3
+    modality: "snRNA-seq+spatial"
+    purpose: "cross-modal and cross-species injury generalization"
+    valid_conditions: ["MI", "healthy"]
+    excluded_conditions: ["I/R", "traumatic_injection"]
+    external_holdouts: ["species", "zone", "modality"]
+    notes: "Use after sample metadata are fully materialized; keep I/R separate from permanent MI."
+
+model_matrix:
+  baseline:
+    - logistic_regression
+    - hist_gradient_boosting
+    - mlp
+  representation:
+    - pca_then_logistic_regression
+    - pca_then_mlp
+
+protocols:
+  within_study:
+    split: "biological_group"
+    selection_metric: "balanced_accuracy"
+    report_metrics: ["auroc", "auprc", "balanced_accuracy", "sensitivity", "specificity", "brier_score", "ece"]
+  cross_study:
+    split: "study_held_out"
+    selection_metric: "balanced_accuracy"
+    report_metrics: ["auroc", "auprc", "balanced_accuracy", "sensitivity", "specificity", "brier_score", "ece"]
+  temporal:
+    split: "timepoint_held_out"
+    selection_metric: "balanced_accuracy"
+    report_metrics: ["auroc", "auprc", "balanced_accuracy"]
+  species_transfer:
+    split: "species_held_out"
+    selection_metric: "balanced_accuracy"
+    report_metrics: ["auroc", "auprc", "balanced_accuracy"]
+
+gates:
+  - "No biological group may appear in more than one partition."
+  - "No technical replicate may cross a partition."
+  - "No supervised feature selection may see held-out rows."
+  - "No final test metric may be used for model tuning."
+  - "Every run must record dataset fingerprint and benchmark version."
+  - "Ambiguous source metadata must stop materialization rather than be guessed."
