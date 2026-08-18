@@ -1,0 +1,12 @@
+{
+  "benchmark_id": "cardiac-maturation-stage",
+  "version": "0.1-template",
+  "task": "classification",
+  "target": "maturation_stage",
+  "split_policy": "study",
+  "group_key": "biological_replicate_id",
+  "modalities": ["single-cell RNA-seq", "single-nucleus RNA-seq", "bulk transcriptomics"],
+  "test_labels_private": false,
+  "source_datasets": [],
+  "metrics": ["balanced_accuracy", "macro_f1", "auroc"]
+}
