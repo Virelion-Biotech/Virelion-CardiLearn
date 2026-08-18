@@ -2,46 +2,54 @@
 
 **Real-data cardiac machine learning for reproducible learning, benchmarking, and transfer.**
 
-CardiLearn is the model-learning layer of the Virelion cardiac ML ecosystem. It is designed to train models on curated cardiac datasets, preserve leakage-safe evaluation boundaries, produce reproducible artifacts, and expose models through stable interfaces that downstream components can consume.
+CardiLearn is the learning layer of the Virelion cardiac ML stack. It turns heterogeneous cardiac observations into reproducible models while enforcing scientific evaluation boundaries: subject-aware splitting, train-only preprocessing, explicit dataset contracts, provenance, and independent evaluation handoff to CardiEval.
 
-## What CardiLearn is for
+## What it can do now
 
-CardiLearn focuses on learning from real cardiac observations rather than generating challenge scenarios. The initial architecture supports:
+- **Tabular:** phenotype, clinical, functional, ECG-derived and imaging-derived feature tables.
+- **Omics:** sample × feature matrices with stable transformation hooks.
+- **ECG / time series:** waveform containers and summary feature extraction.
+- **Imaging:** array-based image contracts and normalization hooks.
+- **Tasks:** binary/multiclass classification and regression baselines.
+- **Splitting:** group-aware random splits and forward-chaining longitudinal validation.
+- **Validation:** duplicate-ID, missingness, target integrity, and group-leakage checks.
+- **Modeling:** logistic regression, ridge regression, and histogram gradient boosting.
+- **Evaluation:** cross-validation, calibration, permutation importance, task metrics, and benchmark tables.
+- **Representation learning:** dependency-light PCA embeddings with a stable interface for future deep encoders.
+- **Reproducibility:** dataset cards, run manifests, configuration, and registry layout.
 
-- tabular, molecular, imaging-derived, ECG-derived, and phenotype feature tables
-- classification and regression tasks
-- patient/sample/group-aware train/validation/test splitting
-- preprocessing fitted only on training data
-- deterministic baselines for fast validation
-- artifact serialization with schema and provenance metadata
-- metrics suitable for downstream CardiEval evaluation
+## Scientific guardrails
 
-## Design principles
-
-1. **No leakage by construction.** Groups such as patient, donor, animal, study, or experiment can define split boundaries.
-2. **Dataset contracts before models.** Every training run starts from explicit feature, target, group, and metadata definitions.
-3. **Baseline first.** A strong deterministic baseline is established before more complex models are introduced.
-4. **Reproducibility is part of the model.** Configuration, versions, split assignments, metrics, and model artifacts are saved together.
-5. **Evaluation stays independent.** CardiLearn trains models; CardiEval remains the independent evaluation layer.
+CardiLearn deliberately separates model development from final assessment. The validation set is for model selection; the held-out test set is not touched until the model is frozen. Subject-level groups should normally define boundaries, and longitudinal studies can use chronological forward validation. CardiEval can then independently score exported predictions.
 
 ## Repository layout
 
 ```text
 cardilearn/
-  config.py          # typed training configuration
-  data.py            # dataset contracts and loading utilities
-  splitting.py       # leakage-safe deterministic splitting
+  config.py          # experiment configuration
+  schema.py          # dataset + feature contracts
+  data.py            # dataframe contracts
+  loaders.py         # CSV/TSV/Parquet/Feather ingestion
+  modalities.py      # omics, waveform, image containers
+  featurization.py   # modality-level summaries
+  splitting.py       # group-aware splitting
+  temporal.py        # forward-chaining validation
   preprocessing.py   # train-fitted preprocessing
   models.py          # baseline model registry
   metrics.py         # task metrics
-  training.py        # end-to-end training orchestration
-  artifacts.py       # portable run/model metadata
-  cli.py             # command-line entry point
-  __main__.py        # python -m cardilearn
+  advanced.py        # CV, calibration, permutation importance
+  embeddings.py      # representation-learning baseline
+  validation.py      # dataset integrity checks
+  benchmark.py       # model comparison protocol
+  dataset_card.py    # provenance metadata
+  artifacts.py       # portable artifacts
+  registry.py        # run/model registry
+  training.py        # training orchestration
+  cli.py             # command-line interface
 
-tests/               # unit tests for core invariants
-configs/              # example experiment configurations
-.github/workflows/    # continuous integration
+tests/               # unit + scientific invariant tests
+configs/             # reproducible experiment examples
+.github/workflows/   # CI
 ```
 
 ## Quick start
@@ -52,21 +60,21 @@ python -m cardilearn --help
 pytest -q
 ```
 
-A minimal configuration is included at `configs/example-classification.json`.
+Example configuration: `configs/example-classification.json`.
 
-## Current milestone
+## Roadmap
 
-The first CardiLearn milestone establishes a trustworthy learning core: explicit dataset schemas, group-aware splitting, train-only preprocessing, baseline models, metrics, run manifests, and CI. Neural and modality-specific trainers will build on these contracts rather than bypassing them.
+The foundation is intentionally modality-neutral. The next layers are dataset-specific loaders for CardiBench-compatible cardiac datasets, high-dimensional omics reduction, ECG foundation encoders, image encoders, multimodal fusion, hyperparameter optimization, uncertainty estimation, model cards, and direct CardiEval export.
 
 ## Ecosystem
 
-- **CardiAgent** — cardiac challenge-agent generation
+- **CardiAgent** — challenge-agent generation
 - **CardiVex** — challenge detection and characterization
-- **CardiBench** — curated benchmarks and canonical splits
+- **CardiBench** — curated datasets and canonical splits
 - **CardiLearn** — real-data model training
 - **CardiEval** — independent evaluation and statistical comparison
-- **CardiAtlas** — literature and cardiac omics/phenotype knowledge base
-- **CardiSim** — synthetic cardiac trajectory simulation
+- **CardiAtlas** — cardiac literature and knowledge base
+- **CardiSim** — synthetic trajectory simulation
 - **CardiTrace** — provenance and reproducibility
 - **CardiBridge** — cross-component schemas and APIs
 
