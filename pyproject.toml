@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "virelion-cardilearn"
-version = "0.1.0"
+version = "0.2.0"
 description = "Reproducible machine learning for real cardiac datasets."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -20,10 +20,11 @@ dev = [
   "pytest>=8,<9",
   "ruff>=0.6,<1",
 ]
+torch = ["torch>=2.2,<3"]
+bio = ["anndata>=0.10,<1", "scanpy>=1.10,<2"]
+vision = ["pillow>=10,<12"]
 
-torch = [
-  "torch>=2.2,<3",
-]
+audio = ["scipy>=1.12,<2"]
 
 [project.scripts]
 cardilearn = "cardilearn.cli:main"
