@@ -1,12 +1,42 @@
 {
-  "benchmark_id": "mi-vs-sham-priority",
-  "version": "1.0",
-  "task": "classification",
-  "target": "injury_label",
-  "split_policy": "animal",
-  "group_key": "biological_replicate_id",
-  "modalities": ["single-cell RNA-seq", "single-nucleus RNA-seq", "spatial transcriptomics"],
-  "test_labels_private": false,
-  "source_datasets": ["GSE153480", "GSE135310", "GSE216211", "GSE106472", "GSE269054"],
-  "metrics": ["auroc", "auprc", "balanced_accuracy", "sensitivity", "specificity", "brier_score", "ece"]
+  "benchmark_id": "mi-vs-sham-cardiobench",
+  "version": "1.0.0",
+  "task": "MI vs Sham classification",
+  "datasets": {
+    "development": "GSE153480",
+    "external_validation": "GSE216211"
+  },
+  "excluded_conditions": ["MI-E"],
+  "grouping": "biological sample",
+  "protocol": {
+    "track_1": {
+      "name": "exploratory cell-level representation",
+      "status": "exploratory",
+      "splitter": "StratifiedGroupKFold",
+      "feature_selection": "fit within training fold only",
+      "grouping_unit": "biological sample"
+    },
+    "track_2": {
+      "name": "biological-replicate benchmark",
+      "status": "primary",
+      "representation": "sample-level pseudobulk",
+      "statistical_unit": "biological sample"
+    }
+  },
+  "primary_metrics": ["AUROC", "AUPRC", "balanced_accuracy"],
+  "secondary_metrics": [
+    "accuracy",
+    "F1",
+    "sensitivity",
+    "specificity",
+    "Brier score",
+    "calibration/ECE"
+  ],
+  "external_validation": {
+    "tuning_allowed": false,
+    "feature_selection_allowed": false,
+    "model_selection_allowed": false,
+    "mi_e_policy": "exclude"
+  },
+  "prediction_format": "cardilearn.predictions.v1"
 }

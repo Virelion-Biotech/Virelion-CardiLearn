@@ -1,19 +1,23 @@
 {
   "accession": "GSE216211",
-  "source": "NCBI GEO",
-  "modality": "scRNA-seq",
-  "organism": "Mus musculus",
-  "raw_archive": "GSE216211_RAW.tar",
-  "raw_tar_bytes": 200622080,
-  "raw_tar_sha256": "99df4b66ed5e64911b9b80160649b63fdaf2ac5974e722b269e623974faca355",
-  "soft_sha256": "3290f7791835548c42a66e9ec3030cce778c2db85baa8568f345c7ab73d18a39",
-  "source_data_policy": "source archives are not committed; acquire locally and verify SHA-256",
-  "samples": [
-    {"sample_id":"GSM6661562","title":"Sham, scRNAseq","condition":"Sham","developmental_age":"8-9 weeks old","timepoint":null,"group_id":"GSM6661562","cells":11357,"genes":32285,"nnz":13337579,"median_umi_per_cell":2727.0,"median_detected_genes":1036.0,"median_mt_fraction":0.0266918307,"p90_mt_fraction":0.0502012058},
-    {"sample_id":"GSM6661563","title":"MI, scRNAseq","condition":"MI","developmental_age":"8-9 weeks old","timepoint":null,"group_id":"GSM6661563","cells":9095,"genes":32285,"nnz":22882459,"median_umi_per_cell":9604.0,"median_detected_genes":2511.0,"median_mt_fraction":0.0121441527,"p90_mt_fraction":0.0238403065},
-    {"sample_id":"GSM6661564","title":"MI-E, scRNAseq","condition":"MI-E","developmental_age":"8-9 weeks old","timepoint":null,"group_id":"GSM6661564","cells":12707,"genes":32285,"nnz":26033437,"median_umi_per_cell":7287.0,"median_detected_genes":2055.0,"median_mt_fraction":0.0164972185,"p90_mt_fraction":0.0380095685}
+  "organism": "mouse",
+  "assay": "scRNA-seq",
+  "modality": "single-cell RNA-seq",
+  "sample_ids": [],
+  "biological_condition": ["Sham", "MI", "MI-E"],
+  "timepoint": "see GEO sample metadata",
+  "developmental_stage": "see GEO sample metadata",
+  "biological_grouping_key": "biological sample",
+  "exclusion_criteria": [
+    "Exclude MI-E from the primary MI-vs-Sham binary task",
+    "Do not treat cells as independent biological replicates"
   ],
-  "primary_task": "MI_vs_Sham",
-  "primary_split_group": "sample_id",
-  "notes": ["MI-E is retained as a separate perturbation and excluded from the primary MI-vs-Sham task.","All three samples are immune-cell enriched cardiac datasets, so this dataset should not be interpreted as a whole-heart expression benchmark.","Cell-level observations must never be split across the same biological sample."]
+  "source": {
+    "accession": "GSE216211",
+    "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE216211"
+  },
+  "file_hashes": {},
+  "preprocessing_version": "pending_materialization",
+  "dataset_fingerprint": null,
+  "notes": "Sample IDs and hashes remain empty until the supplied GEO files are materialized locally; this manifest intentionally does not fabricate metadata."
 }

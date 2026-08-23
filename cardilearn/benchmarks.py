@@ -7,9 +7,10 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from sklearn.base import clone
-from sklearn.model_selection import GroupKFold, StratifiedKFold, KFold
+from sklearn.model_selection import KFold, StratifiedKFold
 
 from .metrics import evaluate
+from .splitting import make_classification_splitter
 
 
 @dataclass(frozen=True)
@@ -54,10 +55,20 @@ def cross_validate(
     n_splits: int = 5,
     random_state: int = 42,
 ) -> CVResult:
-    """Cross-validate without allowing subjects/studies to cross folds."""
+    """Cross-validate without allowing biological samples to cross folds.
+
+    For classification with biological groups, StratifiedGroupKFold is mandatory so
+    validation folds contain both classes whenever the dataset can support that design.
+    Regression retains the generic grouped behavior.
+    """
     if n_splits < 2:
         raise ValueError("n_splits must be >= 2")
-    if groups is not None:
+    if groups is not None and task == "classification":
+        splitter = make_classification_splitter(n_splits, groups, y, random_state)
+        iterator = splitter.split(X, y, groups=groups)
+    elif groups is not None:
+        from sklearn.model_selection import GroupKFold
+
         splitter = GroupKFold(n_splits=n_splits)
         iterator = splitter.split(X, y, groups=groups)
     elif task == "classification":

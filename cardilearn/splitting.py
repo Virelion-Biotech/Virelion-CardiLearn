@@ -1,12 +1,15 @@
 """Leakage-safe deterministic splitting."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import GroupShuffleSplit, train_test_split
+from sklearn.model_selection import (
+    GroupShuffleSplit,
+    StratifiedGroupKFold,
+    train_test_split,
+)
 
 from .config import SplitConfig
 
@@ -23,6 +26,53 @@ class SplitIndices:
         sets = [set(self.train.tolist()), set(self.validation.tolist()), set(self.test.tolist())]
         if sets[0] & sets[1] or sets[0] & sets[2] or sets[1] & sets[2]:
             raise AssertionError("split indices overlap")
+
+
+def make_classification_splitter(
+    n_splits: int,
+    groups: pd.Series | np.ndarray,
+    y: pd.Series | np.ndarray,
+    random_state: int = 42,
+) -> StratifiedGroupKFold:
+    """Create a feasibility-checked StratifiedGroupKFold for classification.
+
+    Biological samples are the independent units for cardiac cell-level benchmarks.
+    StratifiedGroupKFold keeps every sample intact while attempting to preserve class
+    proportions. The explicit feasibility check prevents invalid folds where AUROC
+    would be undefined because a validation fold contains only one class.
+    """
+    if n_splits < 2:
+        raise ValueError("n_splits must be >= 2")
+    group_values = pd.Series(groups).reset_index(drop=True)
+    target = pd.Series(y).reset_index(drop=True)
+    if len(group_values) != len(target):
+        raise ValueError("groups and y must have the same number of observations")
+    if group_values.isna().any():
+        raise ValueError("group labels cannot contain missing values")
+    if target.isna().any():
+        raise ValueError("classification targets cannot contain missing values")
+    if target.nunique() != 2:
+        raise ValueError("MI-vs-Sham classification requires exactly two classes")
+    groups_per_class = target.groupby(target).apply(
+        lambda values: group_values[values.index].nunique()
+    )
+    insufficient = groups_per_class[groups_per_class < n_splits]
+    if not insufficient.empty:
+        detail = ", ".join(f"{cls}={int(count)}" for cls, count in groups_per_class.items())
+        raise ValueError(
+            f"cannot create {n_splits} stratified grouped folds: each class needs at least "
+            f"{n_splits} biological groups ({detail})"
+        )
+    if group_values.nunique() < n_splits:
+        raise ValueError(
+            f"cannot create {n_splits} grouped folds from only "
+            f"{group_values.nunique()} biological groups"
+        )
+    return StratifiedGroupKFold(
+        n_splits=n_splits,
+        shuffle=True,
+        random_state=random_state,
+    )
 
 
 def _group_split(

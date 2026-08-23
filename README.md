@@ -19,6 +19,7 @@ CardiLearn is the learning layer of the Virelion cardiac ML ecosystem. It trains
 - Regression: ridge, histogram gradient boosting, MLP.
 - Train-fitted preprocessing for mixed numeric/categorical tables.
 - Group-aware train/validation/test splitting.
+- Classification CV uses `StratifiedGroupKFold` when biological groups are supplied.
 - Development-only cross-validation and model selection.
 - High-dimensional omics feature selection + PCA.
 - ECG/time-series summary feature extraction.
@@ -35,6 +36,16 @@ CardiLearn is the learning layer of the Virelion cardiac ML ecosystem. It trains
 
 The first concrete benchmark matrix targets myocardial infarction versus sham/reference using public scRNA-seq datasets including GSE153480 and GSE216211. P1/P8, timepoint, MI-E, study, and biological-group metadata remain explicit rather than being collapsed into a single label.
 
+## MI-vs-Sham scientific protocol
+
+The primary benchmark definition is `configs/benchmarks/mi-vs-sham-cardiobench.json`. GSE153480 is the development dataset and GSE216211 is external validation. MI-E is excluded from the primary GSE216211 binary task.
+
+For cell-level exploratory representation, cells are observations but the biological sample is the independent grouping unit. CardiLearn uses `cardilearn.splitting.make_classification_splitter(...)`, backed by `StratifiedGroupKFold`, so a biological sample can never cross folds while MI/Sham balance is optimized. The splitter refuses infeasible configurations rather than silently creating one-class validation folds.
+
+The primary scientifically defensible track is sample-level/pseudobulk evaluation. Cells from the same biological sample must not be counted as independent biological replicates, and confidence intervals must resample biological samples rather than individual cells.
+
+See `docs/CARDIOBENCH_WORKFLOW.md` and `docs/MI_SHAM_BENCHMARK.md` for the complete protocol.
+
 ## Scientific contract
 
 1. **Groups do not cross evaluation boundaries.** Patient, donor, animal, experiment, or study identifiers can define partitions.
@@ -43,6 +54,7 @@ The first concrete benchmark matrix targets myocardial infarction versus sham/re
 4. **Every result is reproducible.** Configuration, feature schema, split indices, dataset fingerprint, metrics, and model artifact travel together.
 5. **Evaluation is independent.** CardiLearn produces models and frozen predictions; CardiEval owns independent statistical comparison.
 6. **Source ambiguity stops the pipeline.** Metadata are validated instead of guessed.
+7. **Cells are not biological replicates.** Cell-level observations remain grouped by biological sample for cardiac injury benchmarks.
 
 ## Materializing the first real benchmark
 

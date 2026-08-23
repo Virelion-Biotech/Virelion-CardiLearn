@@ -1,81 +1,51 @@
-# CardiBench → CardiLearn workflow
+# CardiBench workflow in CardiLearn
 
-CardiLearn consumes benchmark definitions from the Virelion-CardiBench repository but does **not** copy or redistribute source datasets.
-
-## 1. Register a benchmark definition
-
-A definition must specify:
-
-- `benchmark_id` and `version`
-- task type
-- target column
-- biological grouping key
-- split policy
-- source dataset accessions
-- primary metrics
-
-The contract follows the CardiBench `BenchmarkDefinition` schema.
-
-## 2. Materialize the dataset table
-
-The table supplied to CardiLearn should contain at minimum:
+CardiLearn is the training and prediction layer; CardiEval remains the independent evaluation layer.
 
 ```text
-sample_id
-biological_replicate_id
-<target>
-<model features...>
+raw data
+  ↓
+QC
+  ↓
+sample metadata
+  ↓
+biological grouping
+  ↓
+fold-specific preprocessing
+  ↓
+StratifiedGroupKFold (classification)
+  ↓
+model
+  ↓
+frozen predictions
+  ↓
+CardiEval
 ```
 
-For multimodal datasets, align modalities on `sample_id` before training. Keep study, species, age, timepoint, anatomical zone, genotype, sex, cell context, and technical replicate identifiers as metadata columns when relevant.
+## Biological grouping is mandatory for cardiac cell benchmarks
 
-## 3. Enforce biological split boundaries
+Cells are observations, but cells from the same biological sample are not independent biological replicates. A sample must remain intact during validation. For MI-vs-Sham classification, CardiLearn therefore uses `StratifiedGroupKFold` rather than ordinary `GroupKFold`: the group is the biological sample and the target is MI/Sham.
 
-For the ordinary within-study setting, the benchmark runner supports subject/donor/animal/technical-group policies.
+The splitter is exposed as `cardilearn.splitting.make_classification_splitter(...)`. It performs a feasibility check before yielding folds. If either class has fewer biological groups than `n_splits`, the benchmark stops with a clear error rather than producing validation folds in which AUROC is undefined.
 
-For external generalization protocols—study-held-out, species-held-out, timepoint-held-out—the split must be materialized explicitly by CardiBench. CardiLearn deliberately refuses to infer such a split from arbitrary metadata because that can silently produce invalid scientific comparisons.
+## Two benchmark tracks
 
-## 4. Train on development data
+### Track 1 — exploratory cell-level representation
 
-```bash
-python -m cardilearn benchmark \
-  --data prepared_features.csv \
-  --definition configs/benchmarks/mi-vs-sham-cardiobench.json \
-  --model logistic_regression \
-  --output runs/mi-vs-sham.json
-```
+This track asks whether molecular representations distinguish MI from Sham at the cell-observation level. Feature selection, scaling, and dimensionality reduction must be fitted inside each training fold. Cells from a biological sample never cross a fold.
 
-Model selection remains development-only. The final test partition is not used for tuning.
+This result is explicitly exploratory because thousands of cells do not create thousands of independent biological replicates.
 
-## 5. Export frozen predictions
+### Track 2 — biological-replicate benchmark
 
-Use `cardilearn.io.export_predictions()` with the frozen model and the benchmark test sample IDs. The output format is `cardilearn.predictions.v1`, which is intended for CardiEval.
+This is the primary scientifically defensible track. Counts are aggregated within each biological sample (pseudobulk/sample-level representation), normalization and feature selection are learned from training samples only, and evaluation is performed with the biological sample as the statistical unit.
 
-## 6. Independent evaluation
+Confidence intervals must therefore resample biological samples, not individual cells.
 
-CardiEval should ingest the frozen predictions and calculate comparative statistics, confidence intervals, calibration analyses, subgroup analyses, and model-vs-model significance tests. CardiLearn must not select a model on the basis of CardiEval test results.
+## External validation
 
-## Priority cardiac tasks
+GSE153480 is the development dataset and GSE216211 is external validation. MI-E is excluded from the primary GSE216211 MI-vs-Sham task. No external sample may influence feature selection, hyperparameter tuning, model selection, or representation fitting.
 
-### MI vs sham/reference
+## Prediction contract
 
-This is the first canonical benchmark family. The CardiBench registry currently identifies candidate public injury datasets including GSE153480, GSE135310, GSE216211, GSE106472, and GSE269054. Their source metadata must be re-verified at materialization time, especially biological replicate and pooling structure.
-
-Recommended evaluations:
-
-1. within-study subject-level MI vs sham/reference
-2. study-held-out external generalization
-3. timepoint-held-out temporal generalization
-4. cell-context-aware evaluation to detect composition shortcuts
-5. species-held-out transfer where biologically appropriate
-
-Do not merge permanent MI with I/R, do not merge genotype perturbations into the primary injury label, and do not allow cells/nuclei or technical replicates from the same biological subject to cross evaluation boundaries.
-
-## Candidate future task families
-
-- cardiac regeneration vs non-regeneration
-- developmental/maturation-stage prediction
-- post-infarction temporal-state prediction
-- injury-zone/border-zone classification
-- cross-species cardiac-state transfer
-- multimodal phenotype prediction
+Completed runs should export frozen predictions using `cardilearn.predictions.v1`, retaining dataset, model, fold/split, biological sample, observation identifier, true label, predicted label, and probability where applicable. CardiEval consumes these frozen predictions for independent metrics, confidence intervals, calibration, and statistical comparisons.
