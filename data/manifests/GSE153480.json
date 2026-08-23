@@ -1,20 +1,30 @@
 {
   "accession": "GSE153480",
-  "organism": "mouse",
+  "source": "NCBI GEO",
+  "modality": "scRNA-seq",
   "assay": "scRNA-seq",
-  "modality": "single-cell RNA-seq",
-  "sample_ids": [],
-  "biological_condition": ["MI", "Sham"],
-  "timepoint": "see GEO sample metadata",
-  "developmental_stage": "neonatal/developmental conditions; preserve exact source metadata",
-  "biological_grouping_key": "biological sample",
-  "exclusion_criteria": ["Do not treat cells as independent biological replicates"],
-  "source": {
-    "accession": "GSE153480",
-    "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE153480"
-  },
-  "file_hashes": {},
-  "preprocessing_version": "pending_materialization",
+  "organism": "Mus musculus",
+  "raw_archive": "GSE153480_RAW.tar",
+  "raw_tar_bytes": 123054080,
+  "raw_tar_sha256": "8ed835cd324608799b5cdcd7665b0b4e9f01f504667da4dd7a0f57f4e40e16a4",
+  "soft_sha256": "d94288bb09dc3304f0876bb6c7256a122f9ef0471813099b279ad786ba1cc443",
+  "source_data_policy": "source archives are not committed; acquire locally and verify SHA-256",
+  "source_url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE153480",
+  "samples": [
+    {"sample_id":"GSM4644949","title":"scRNA-seq_P1_1MI","condition":"MI","developmental_age":"P1","timepoint":"day1","group_id":"GSM4644949","cells":2332,"genes":28692,"nnz":7201443,"median_umi_per_cell":10189.5,"median_detected_genes":2901.5,"median_mt_fraction":0.0300848121,"p90_mt_fraction":0.0485075285},
+    {"sample_id":"GSM4644950","title":"scRNA-seq_P1_1Sham","condition":"Sham","developmental_age":"P1","timepoint":"day1","group_id":"GSM4644950","cells":3297,"genes":28692,"nnz":6401363,"median_umi_per_cell":4804.0,"median_detected_genes":1810.0,"median_mt_fraction":0.0434782609,"p90_mt_fraction":0.4205218728},
+    {"sample_id":"GSM4644951","title":"scRNA-seq_P1_3MI","condition":"MI","developmental_age":"P1","timepoint":"day3","group_id":"GSM4644951","cells":3651,"genes":28692,"nnz":9174032,"median_umi_per_cell":7124.0,"median_detected_genes":2391.0,"median_mt_fraction":0.0389469890,"p90_mt_fraction":0.0778287767},
+    {"sample_id":"GSM4644952","title":"scRNA-seq_P1_3Sham","condition":"Sham","developmental_age":"P1","timepoint":"day3","group_id":"GSM4644952","cells":3023,"genes":28692,"nnz":5535852,"median_umi_per_cell":4484.0,"median_detected_genes":1750.0,"median_mt_fraction":0.0388032079,"p90_mt_fraction":0.0973307462},
+    {"sample_id":"GSM4644953","title":"scRNA-seq_P8_1MI","condition":"MI","developmental_age":"P8","timepoint":"day1","group_id":"GSM4644953","cells":1308,"genes":27998,"nnz":2091410,"median_umi_per_cell":3368.0,"median_detected_genes":1390.0,"median_mt_fraction":0.0311023461,"p90_mt_fraction":0.0658630989},
+    {"sample_id":"GSM4644954","title":"scRNA-seq_P8_1Sham","condition":"Sham","developmental_age":"P8","timepoint":"day1","group_id":"GSM4644954","cells":1961,"genes":28692,"nnz":3211964,"median_umi_per_cell":3320.0,"median_detected_genes":1381.0,"median_mt_fraction":0.1006404392,"p90_mt_fraction":0.1660098522},
+    {"sample_id":"GSM4644955","title":"scRNA-seq_P8_3MI","condition":"MI","developmental_age":"P8","timepoint":"day3","group_id":"GSM4644955","cells":1782,"genes":28692,"nnz":4221134,"median_umi_per_cell":5788.0,"median_detected_genes":2176.0,"median_mt_fraction":0.0304665956,"p90_mt_fraction":0.0776667033},
+    {"sample_id":"GSM4644956","title":"scRNA-seq_P8_3Sham","condition":"Sham","developmental_age":"P8","timepoint":"day3","group_id":"GSM4644956","cells":1508,"genes":28692,"nnz":1435232,"median_umi_per_cell":1557.0,"median_detected_genes":810.0,"median_mt_fraction":0.0591161895,"p90_mt_fraction":0.1611988569}
+  ],
+  "primary_task": "MI_vs_Sham",
+  "primary_split_group": "sample_id",
+  "biological_grouping_key": "sample_id",
+  "exclusion_criteria": ["Cells are not independent biological replicates"],
+  "preprocessing_version": "pending_benchmark_run",
   "dataset_fingerprint": null,
-  "notes": "Sample IDs and hashes remain empty until the supplied GEO files are materialized locally; this manifest intentionally does not fabricate metadata."
+  "notes": ["P1/P8 and postoperative day are retained as explicit metadata.","P8 sham shows elevated mitochondrial fraction and should receive QC review before downstream modeling.","Cell-level observations must never be split across the same biological sample."]
 }
