@@ -34,12 +34,12 @@ def make_classification_splitter(
     y: pd.Series | np.ndarray,
     random_state: int = 42,
 ) -> StratifiedGroupKFold:
-    """Create a feasibility-checked StratifiedGroupKFold for classification.
+    """Create a validated StratifiedGroupKFold for biological classification.
 
     Biological samples are the independent units for cardiac cell-level benchmarks.
     StratifiedGroupKFold keeps every sample intact while attempting to preserve class
-    proportions. The explicit feasibility check prevents invalid folds where AUROC
-    would be undefined because a validation fold contains only one class.
+    proportions. The feasibility check validates the actual folds before returning the
+    splitter, preventing one-class validation folds where AUROC would be undefined.
     """
     if n_splits < 2:
         raise ValueError("n_splits must be >= 2")
@@ -68,11 +68,28 @@ def make_classification_splitter(
             f"cannot create {n_splits} grouped folds from only "
             f"{group_values.nunique()} biological groups"
         )
-    return StratifiedGroupKFold(
+
+    splitter = StratifiedGroupKFold(
         n_splits=n_splits,
         shuffle=True,
         random_state=random_state,
     )
+    dummy_x = np.zeros((len(target), 1))
+    validation_groups: set[object] = set()
+    for _, validation_idx in splitter.split(dummy_x, target, group_values):
+        validation_classes = set(target.iloc[validation_idx].tolist())
+        if len(validation_classes) != 2:
+            raise ValueError(
+                "requested StratifiedGroupKFold configuration produces a validation fold "
+                "without both MI and Sham; reduce n_splits or provide more biological groups"
+            )
+        fold_groups = set(group_values.iloc[validation_idx].tolist())
+        if validation_groups & fold_groups:
+            raise AssertionError("a biological sample appears in more than one validation fold")
+        validation_groups.update(fold_groups)
+    if validation_groups != set(group_values.tolist()):
+        raise AssertionError("not every biological sample was assigned to exactly one fold")
+    return splitter
 
 
 def _group_split(

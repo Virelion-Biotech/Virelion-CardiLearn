@@ -4,7 +4,7 @@
   "task": "MI vs Sham classification",
   "target": "injury_label",
   "split_policy": "biological sample",
-  "group_key": "biological_replicate_id",
+  "group_key": "sample_id",
   "modalities": ["single-cell RNA-seq", "single-nucleus RNA-seq", "spatial transcriptomics"],
   "test_labels_private": false,
   "source_datasets": ["GSE153480", "GSE135310", "GSE216211", "GSE106472", "GSE269054"],
