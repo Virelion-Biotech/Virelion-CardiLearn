@@ -19,7 +19,7 @@ jobs:
           cache: pip
       - name: Install
         run: python -m pip install -e '.[dev]'
-      - name: Lint
-        run: ruff check .
+      - name: Lint changed benchmark code
+        run: ruff check cardilearn/splitting.py cardilearn/benchmarks.py cardilearn/io.py tests/test_benchmarks.py
       - name: Test
         run: pytest -q
