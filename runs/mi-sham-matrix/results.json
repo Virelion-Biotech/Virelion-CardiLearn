@@ -1,0 +1,42 @@
+[
+  {
+    "benchmark_id": "mi-vs-sham-priority",
+    "dataset": "GSE153480",
+    "model": "logistic_regression",
+    "n_test": 2,
+    "n_train": 4,
+    "n_validation": 2,
+    "test": {
+      "accuracy": 1.0,
+      "auroc": null,
+      "balanced_accuracy": 1.0,
+      "f1_macro": 1.0
+    },
+    "validation": {
+      "accuracy": 1.0,
+      "auroc": null,
+      "balanced_accuracy": 1.0,
+      "f1_macro": 1.0
+    }
+  },
+  {
+    "benchmark_id": "mi-vs-sham-priority",
+    "dataset": "GSE153480",
+    "model": "hist_gradient_boosting",
+    "n_test": 2,
+    "n_train": 4,
+    "n_validation": 2,
+    "test": {
+      "accuracy": 1.0,
+      "auroc": null,
+      "balanced_accuracy": 1.0,
+      "f1_macro": 1.0
+    },
+    "validation": {
+      "accuracy": 0.0,
+      "auroc": null,
+      "balanced_accuracy": 0.0,
+      "f1_macro": 0.0
+    }
+  }
+]
