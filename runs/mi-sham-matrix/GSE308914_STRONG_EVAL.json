@@ -1,0 +1,53 @@
+{
+  "study": "GSE308914",
+  "n": 30,
+  "n_ref": 6,
+  "n_mi": 24,
+  "cv5_auroc": {
+    "folds": [1.0, 1.0, 1.0, 1.0, 1.0],
+    "mean": 1.0
+  },
+  "leave_one_sex_out": [
+    {
+      "test_sex": "F",
+      "n_test": 15,
+      "auroc": 1.0,
+      "bal_acc": 0.9583333333333333
+    },
+    {
+      "test_sex": "M",
+      "n_test": 15,
+      "auroc": 1.0,
+      "bal_acc": 1.0
+    }
+  ],
+  "timepoint_contrasts": [
+    {
+      "contrast": "D0_vs_D1",
+      "mean_auroc": 1.0,
+      "folds": [1.0, 1.0, 1.0, 1.0, 1.0]
+    },
+    {
+      "contrast": "D0_vs_D4",
+      "mean_auroc": 1.0,
+      "folds": [1.0, 1.0, 1.0, 1.0, 1.0]
+    },
+    {
+      "contrast": "D0_vs_D7",
+      "mean_auroc": 1.0,
+      "folds": [1.0, 1.0, 1.0, 1.0, 1.0]
+    },
+    {
+      "contrast": "D0_vs_D28",
+      "mean_auroc": 1.0,
+      "folds": [1.0, 1.0, 1.0, 1.0, 1.0]
+    }
+  ],
+  "permutation": {
+    "n_perm": 200,
+    "observed": 1.0,
+    "null_mean": 0.49665,
+    "null_max": 0.96,
+    "p_value_one_sided": 0.004975124378109453
+  }
+}
