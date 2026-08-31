@@ -1,6 +1,6 @@
 """Virelion CardiLearn: reproducible ML for real cardiac datasets."""
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 from .dataset_card import DatasetCard
 from .registry import ModelRegistry
