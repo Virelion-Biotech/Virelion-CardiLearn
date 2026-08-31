@@ -1,0 +1,6 @@
+sample_id,biological_group_id,study_id,injury_label,condition,timepoint,modality,n_cells
+GSM4005123_F8_mm10,GSM4005123_F8_mm10,GSE135310,0,Reference,steady_state,scRNA-seq_pseudobulk,683
+GSM4005124_F9_mm10,GSM4005124_F9_mm10,GSE135310,1,MI,day7,scRNA-seq_pseudobulk,1807
+GSM4005125_F11_mm10,GSM4005125_F11_mm10,GSE135310,1,MI,day1,scRNA-seq_pseudobulk,552
+GSM4005126_F12_mm10,GSM4005126_F12_mm10,GSE135310,1,MI,day3,scRNA-seq_pseudobulk,883
+GSM4005127_G1_mm10,GSM4005127_G1_mm10,GSE135310,1,MI,day5,scRNA-seq_pseudobulk,1017
