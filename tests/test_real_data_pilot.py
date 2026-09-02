@@ -16,17 +16,16 @@ from cardilearn.real_data import (
 )
 
 
-def test_real_pilot_manifest_loads_and_has_three_candidates():
+def test_real_pilot_manifest_loads_and_has_expanded_candidate_set():
     studies = load_manifest("configs/real_data_pilot_v0_1.json")
-    assert len(studies) == 3
+    assert len(studies) == 8
     assert {study.accession for study in studies} == {
-        "GSE185289",
-        "GSE130699",
-        "GSE217494",
+        "GSE185289", "GSE130699", "GSE217494", "GSE153480",
+        "GSE135310", "GSE106472", "GSE216211", "GSE269054",
     }
 
 
-def test_real_pilot_manifest_has_no_blocking_issues():
+def test_real_pilot_manifest_has_no_blocking_issues_but_is_not_locked():
     studies = load_manifest("configs/real_data_pilot_v0_1.json")
     audit = audit_manifest(studies)
     assert audit.blocking == []
@@ -46,26 +45,14 @@ def test_duplicate_study_ids_are_rejected(tmp_path):
     manifest = {
         "studies": [
             {
-                "study_id": "a",
-                "accession": "GSE1",
-                "source": "GEO",
-                "species": "mouse",
-                "modality": "snRNA-seq",
-                "role": "test",
-                "evidence_tier": "A",
-                "tasks": ["representation"],
-                "rationale": "test",
+                "study_id": "a", "accession": "GSE1", "source": "GEO",
+                "species": "mouse", "modality": "snRNA-seq", "role": "test",
+                "evidence_tier": "A", "tasks": ["representation"], "rationale": "test",
             },
             {
-                "study_id": "a",
-                "accession": "GSE2",
-                "source": "GEO",
-                "species": "pig",
-                "modality": "snRNA-seq",
-                "role": "test",
-                "evidence_tier": "A",
-                "tasks": ["representation"],
-                "rationale": "test",
+                "study_id": "a", "accession": "GSE2", "source": "GEO",
+                "species": "pig", "modality": "snRNA-seq", "role": "test",
+                "evidence_tier": "A", "tasks": ["representation"], "rationale": "test",
             },
         ]
     }
@@ -97,38 +84,17 @@ def test_geo_family_soft_parser_preserves_raw_characteristics(tmp_path):
 
 def test_canonicalization_only_controls_known_condition_terms():
     study = StudySpec(
-        study_id="study:test",
-        accession="GSE999999",
-        source="GEO",
-        species="Mus musculus",
-        modality="snRNA-seq",
-        role="development_regeneration_injury",
-        evidence_tier="A",
-        tasks=("representation", "injury"),
-        rationale="test",
+        study_id="study:test", accession="GSE999999", source="GEO",
+        species="Mus musculus", modality="snRNA-seq",
+        role="development_regeneration_injury", evidence_tier="A",
+        tasks=("representation", "injury"), rationale="test",
     )
-    raw = pd.DataFrame(
-        [
-            {
-                "sample_id": "GSM1",
-                "raw_characteristics": {
-                    "subject": ["M1"],
-                    "condition": ["MI"],
-                    "timepoint": ["day 3"],
-                    "tissue": ["heart"],
-                },
-            },
-            {
-                "sample_id": "GSM2",
-                "raw_characteristics": {
-                    "subject": ["M2"],
-                    "condition": ["ARP1MIP28-P35"],
-                    "timepoint": ["P35"],
-                    "tissue": ["heart"],
-                },
-            },
-        ]
-    )
+    raw = pd.DataFrame([
+        {"sample_id": "GSM1", "raw_characteristics": {
+            "subject": ["M1"], "condition": ["MI"], "timepoint": ["day 3"], "tissue": ["heart"]}},
+        {"sample_id": "GSM2", "raw_characteristics": {
+            "subject": ["M2"], "condition": ["ARP1MIP28-P35"], "timepoint": ["P35"], "tissue": ["heart"]}},
+    ])
 
     canonical = canonicalize_geo_samples(raw, study)
     assert canonical.loc[0, "condition"] == "myocardial_injury"
