@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 import pytest
-
 
 torch = pytest.importorskip("torch")
 
@@ -47,13 +47,14 @@ def test_gene_selection_uses_training_only():
     x[:5, 0] = np.arange(5)
     x[:5, 1] = 1
     x[5:, 3] = np.arange(5) * 100
-    import pandas as pd
-    metadata = pd.DataFrame({
-        "_split": ["train"] * 5 + ["test"] * 5,
-        "study_id": ["A"] * 5 + ["B"] * 5,
-        "subject_id": [f"s{i}" for i in range(10)],
-        "sample_id": [f"m{i}" for i in range(10)],
-    })
+    metadata = pd.DataFrame(
+        {
+            "_split": ["train"] * 5 + ["test"] * 5,
+            "study_id": ["A"] * 5 + ["B"] * 5,
+            "subject_id": [f"s{i}" for i in range(10)],
+            "sample_id": [f"m{i}" for i in range(10)],
+        }
+    )
     selected = select_genes_train_only(x, metadata, 2)
     assert 3 not in selected
 
