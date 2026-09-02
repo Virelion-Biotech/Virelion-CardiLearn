@@ -1,0 +1,58 @@
+{
+  "name": "cardilearn_real_data_pilot_v0_1",
+  "status": "candidate_not_locked",
+  "policy": {
+    "primary_split": "study",
+    "secondary_split": "subject",
+    "test_protected": true,
+    "feature_selection_fit": "train_only",
+    "label_discovery": "train_only",
+    "unknown_metadata": "reject_not_guess",
+    "technical_replicates_together": true
+  },
+  "studies": [
+    {
+      "study_id": "gse185289_pig_regeneration",
+      "accession": "GSE185289",
+      "source": "GEO",
+      "species": "Sus scrofa",
+      "modality": "snRNA-seq",
+      "role": "development_regeneration_injury",
+      "evidence_tier": "A",
+      "tasks": ["representation", "maturation", "injury", "regeneration", "transition"],
+      "rationale": "Pig single-nucleus study with fetal, neonatal, injured, and double-injury regenerative/non-regenerative cardiomyocyte states; strong pilot source for developmental and regenerative contrasts.",
+      "source_urls": [
+        "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE185289",
+        "https://pubmed.ncbi.nlm.nih.gov/35666813/"
+      ]
+    },
+    {
+      "study_id": "gse130699_mouse_neonatal_injury",
+      "accession": "GSE130699",
+      "source": "GEO",
+      "species": "Mus musculus",
+      "modality": "snRNA-seq",
+      "role": "development_regeneration_injury",
+      "evidence_tier": "A",
+      "tasks": ["representation", "maturation", "injury", "regeneration", "transition"],
+      "rationale": "Neonatal mouse cardiomyocyte nuclei profiled after MI or sham at P1/P8 and 1/3 days, directly spanning regenerative and non-regenerative developmental contexts.",
+      "source_urls": [
+        "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE130699"
+      ]
+    },
+    {
+      "study_id": "gse217494_human_mi_cite",
+      "accession": "GSE217494",
+      "source": "GEO",
+      "species": "Homo sapiens",
+      "modality": "CITE-seq/GEX",
+      "role": "human_injury_context",
+      "evidence_tier": "A",
+      "tasks": ["representation", "injury"],
+      "rationale": "Human explanted-heart study spanning healthy donors, acute MI, chronic ischemic cardiomyopathy, and non-ischemic cardiomyopathy, providing an independent human disease context and cell-state transfer test.",
+      "source_urls": [
+        "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE217494"
+      ]
+    }
+  ]
+}
