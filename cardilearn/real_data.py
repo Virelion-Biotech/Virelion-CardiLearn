@@ -52,6 +52,8 @@ class AuditIssue:
 class PilotAudit:
     studies: list[StudySpec]
     issues: list[AuditIssue] = field(default_factory=list)
+    sample_metadata_reconciled: bool = False
+    split_manifest_frozen: bool = False
 
     @property
     def blocking(self) -> list[AuditIssue]:
@@ -67,14 +69,18 @@ class PilotAudit:
 
     @property
     def ready_for_lock(self) -> bool:
-        return self.ready_for_metadata_review and not any(
-            issue.code.startswith("MISSING_") for issue in self.issues
+        return (
+            self.ready_for_metadata_review
+            and self.sample_metadata_reconciled
+            and self.split_manifest_frozen
         )
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "ready_for_metadata_review": self.ready_for_metadata_review,
             "ready_for_lock": self.ready_for_lock,
+            "sample_metadata_reconciled": self.sample_metadata_reconciled,
+            "split_manifest_frozen": self.split_manifest_frozen,
             "studies": [
                 {
                     "study_id": study.study_id,
@@ -321,7 +327,17 @@ def canonicalize_geo_samples(
         characteristics = row.get("raw_characteristics") or {}
         subject = _first_characteristic(
             characteristics,
-            ("subject_id", "subject", "donor_id", "donor", "animal_id", "animal", "individual", "patient_id", "patient"),
+            (
+                "subject_id",
+                "subject",
+                "donor_id",
+                "donor",
+                "animal_id",
+                "animal",
+                "individual",
+                "patient_id",
+                "patient",
+            ),
         )
         condition_raw = _first_characteristic(
             characteristics,
@@ -330,7 +346,13 @@ def canonicalize_geo_samples(
         condition = _controlled_condition(condition_raw)
         timepoint = _first_characteristic(
             characteristics,
-            ("timepoint", "collection_timepoint", "post_surgical_day", "day_post_surgery", "days_post_injury"),
+            (
+                "timepoint",
+                "collection_timepoint",
+                "post_surgical_day",
+                "day_post_surgery",
+                "days_post_injury",
+            ),
         )
         tissue = _first_characteristic(characteristics, ("tissue", "tissue_type"))
         region = _first_characteristic(characteristics, ("region", "tissue_region", "zone"))
@@ -342,7 +364,11 @@ def canonicalize_geo_samples(
             characteristics,
             ("technical_replicate", "is_technical_replicate"),
         )
-        technical_value = None if technical is None else technical.lower() in {"1", "true", "yes", "y", "t"}
+        technical_value = (
+            None
+            if technical is None
+            else technical.lower() in {"1", "true", "yes", "y", "t"}
+        )
 
         rows.append(
             {
