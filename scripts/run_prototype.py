@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import numpy as np
 import torch
 from sklearn.decomposition import PCA
 from sklearn.linear_model import LogisticRegression, Ridge
@@ -40,7 +39,6 @@ def main() -> None:
     assert_no_hierarchy_leakage(meta)
 
     train_mask = meta["_split"].eq("train").to_numpy()
-    val_mask = meta["_split"].eq("validation").to_numpy()
     test_mask = meta["_split"].eq("test").to_numpy()
 
     # PCA baseline.
@@ -55,10 +53,8 @@ def main() -> None:
     )
 
     train_ds = CardiLearnCellDataset(X[train_mask], meta.loc[train_mask])
-    val_ds = CardiLearnCellDataset(X[val_mask], meta.loc[val_mask])
     test_ds = CardiLearnCellDataset(X[test_mask], meta.loc[test_mask])
     train_loader = DataLoader(train_ds, batch_size=32, shuffle=True)
-    val_loader = DataLoader(val_ds, batch_size=64, shuffle=False)
     test_loader = DataLoader(test_ds, batch_size=64, shuffle=False)
 
     model = CardiLearnProto(
