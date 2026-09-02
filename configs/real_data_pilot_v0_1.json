@@ -8,7 +8,8 @@
     "feature_selection_fit": "train_only",
     "label_discovery": "train_only",
     "unknown_metadata": "reject_not_guess",
-    "technical_replicates_together": true
+    "technical_replicates_together": true,
+    "no_duplicate_biological_cohort": true
   },
   "studies": [
     {
@@ -21,10 +22,7 @@
       "evidence_tier": "A",
       "tasks": ["representation", "maturation", "injury", "regeneration", "transition"],
       "rationale": "Pig single-nucleus study with fetal, neonatal, injured, and double-injury regenerative/non-regenerative cardiomyocyte states; strong pilot source for developmental and regenerative contrasts.",
-      "source_urls": [
-        "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE185289",
-        "https://pubmed.ncbi.nlm.nih.gov/35666813/"
-      ]
+      "source_urls": ["https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE185289", "https://pubmed.ncbi.nlm.nih.gov/35666813/"]
     },
     {
       "study_id": "gse130699_mouse_neonatal_injury",
@@ -36,9 +34,7 @@
       "evidence_tier": "A",
       "tasks": ["representation", "maturation", "injury", "regeneration", "transition"],
       "rationale": "Neonatal mouse cardiomyocyte nuclei profiled after MI or sham at P1/P8 and 1/3 days, directly spanning regenerative and non-regenerative developmental contexts.",
-      "source_urls": [
-        "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE130699"
-      ]
+      "source_urls": ["https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE130699"]
     },
     {
       "study_id": "gse217494_human_mi_cite",
@@ -50,9 +46,67 @@
       "evidence_tier": "A",
       "tasks": ["representation", "injury"],
       "rationale": "Human explanted-heart study spanning healthy donors, acute MI, chronic ischemic cardiomyopathy, and non-ischemic cardiomyopathy, providing an independent human disease context and cell-state transfer test.",
-      "source_urls": [
-        "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE217494"
-      ]
+      "source_urls": ["https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE217494"]
+    },
+    {
+      "study_id": "gse153480_mouse_neonatal_regeneration",
+      "accession": "GSE153480",
+      "source": "GEO",
+      "species": "Mus musculus",
+      "modality": "scRNA-seq",
+      "role": "development_regeneration_injury",
+      "evidence_tier": "A",
+      "tasks": ["representation", "maturation", "injury", "regeneration", "transition"],
+      "rationale": "Independent neonatal mouse single-cell study spanning P1/P8 MI versus sham with 1/3-day sampling; adds scRNA-seq to the pilot while preserving the developmental regenerative-window question.",
+      "source_urls": ["https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE153480"]
+    },
+    {
+      "study_id": "gse135310_mouse_inflammation",
+      "accession": "GSE135310",
+      "source": "GEO",
+      "species": "Mus musculus",
+      "modality": "scRNA-seq/CITE-seq",
+      "role": "injury_context",
+      "evidence_tier": "A",
+      "tasks": ["representation", "injury"],
+      "rationale": "Time-series single-cell profiling of cardiac leukocyte/myeloid compartments after permanent MI or sham, useful for testing whether latent injury representations transfer across immune-focused datasets.",
+      "source_urls": ["https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE135310"]
+    },
+    {
+      "study_id": "gse106472_mouse_mi_ifn",
+      "accession": "GSE106472",
+      "source": "GEO",
+      "species": "Mus musculus",
+      "modality": "scRNA-seq",
+      "role": "injury_context",
+      "evidence_tier": "B",
+      "tasks": ["representation", "injury"],
+      "rationale": "Compact mouse heart single-cell MI dataset with WT MI, IRF3-knockout MI, and WT non-MI reference; useful as a mechanistic external test, not as a primary generalization cohort because genotype is confounded with condition in part of the design.",
+      "source_urls": ["https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE106472"]
+    },
+    {
+      "study_id": "gse216211_mouse_cardiac_macrophages",
+      "accession": "GSE216211",
+      "source": "GEO",
+      "species": "Mus musculus",
+      "modality": "scRNA-seq",
+      "role": "injury_context",
+      "evidence_tier": "B",
+      "tasks": ["representation", "injury"],
+      "rationale": "Heart macrophage single-cell dataset containing sham, MI, and MI-E conditions; valuable for cell-context robustness but not a whole-heart maturation or regeneration ground truth.",
+      "source_urls": ["https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE216211"]
+    },
+    {
+      "study_id": "gse269054_mouse_human_spatial_injury",
+      "accession": "GSE269054",
+      "source": "GEO",
+      "species": "Homo sapiens; Mus musculus",
+      "modality": "snRNA-seq/spatial",
+      "role": "injury_spatial_context",
+      "evidence_tier": "B",
+      "tasks": ["representation", "injury"],
+      "rationale": "Cross-species spatial and single-nucleus injury study of healthy and injured myocardium; useful for external spatial/cell-state validation, while I/R and traumatic-injury samples remain explicitly separate from primary permanent-MI labels.",
+      "source_urls": ["https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE269054"]
     }
   ]
 }
