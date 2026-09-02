@@ -1,214 +1,136 @@
 # Virelion CardiLearn
 
-**Reproducible machine learning for real cardiac datasets, with explicit biological validation boundaries.**
+**A research-grade cardiac state representation model with explicit biological validation boundaries.**
 
-CardiLearn is the learning layer of the Virelion cardiac ML ecosystem. It provides leakage-aware data contracts, preprocessing, model training, benchmark execution, transfer evaluation, calibration, explainability, and reproducible artifacts for cardiac ML research.
+CardiLearn is the learning layer of the Virelion cardiac ML ecosystem. `main` now tracks the new CardiLearn research-model direction: a structured transcriptomic representation model that learns from gene expression, compresses expression into learned molecular programs, conditions representations on assay/species context, separates shared and private latent information, and exposes biological prediction heads.
 
-> **Current status:** software and benchmark infrastructure are substantially implemented. Real-data execution remains intentionally data-dependent; this repository does not commit source datasets or claim benchmark performance that has not been independently materialized and verified.
+> **Current status:** CardiLearn v0.1 is an executable research prototype. It is not a validated cardiac foundation model, a clinical system, or evidence of regenerative efficacy. Real-data scientific claims remain data-dependent and must be demonstrated on locked held-out benchmarks.
 
-## Scope
+## Current model direction
 
-CardiLearn is designed for research workflows in which the biological unit of inference matters. It separates observations from independent biological groups, keeps model development separate from held-out evaluation, and records provenance alongside outputs.
-
-It is **not** a clinical decision-support system and does not establish clinical validity, diagnostic performance, or prospective utility by itself.
-
-## Implemented capabilities
-
-### Data, schemas, and provenance
-
-- Explicit dataset contracts with target, sample, subject, donor, animal, study, and grouping metadata.
-- CSV and modality-table adapters for cardiac feature matrices.
-- Multimodal alignment by unique sample identifiers.
-- Dataset integrity checks for missingness, duplicate identifiers, missing targets, and group leakage.
-- Reproducibility metadata and deterministic dataset fingerprints.
-- Reproducible NCBI GEO acquisition with SHA-256 manifests; source data remain outside Git.
-- Dataset/model cards and serialized run artifacts.
-
-### Learning
-
-- Classification: logistic regression, histogram gradient boosting, and MLP.
-- Regression: ridge, histogram gradient boosting, and MLP.
-- Train-fitted preprocessing for mixed numeric/categorical tables.
-- Deterministic group-aware train/validation/test splitting.
-- `StratifiedGroupKFold` support for biological classification when feasible.
-- Development-only cross-validation and model selection.
-- High-dimensional omics preprocessing with train-only feature selection and PCA.
-- ECG/time-series summary feature extraction.
-- Probability calibration with ECE/Brier-style metrics.
-- Validation-set permutation importance.
-- PCA representation-learning baseline.
-
-### CardiBench integration
-
-- CardiBench-compatible benchmark-definition loading and validation.
-- Explicit biological split policies and external-level holdout contracts.
-- MI/sham priority source manifests.
-- Reproducible candidate-model matrix execution over prepared feature tables.
-- Benchmark versions, dataset fingerprints, model configurations, and predictions can travel with results.
-- Cross-study transfer support with training-only feature selection.
-- Bootstrap confidence intervals and permutation-null analysis for transfer uncertainty.
-
-## Primary benchmark: MI vs sham/reference
-
-The first concrete benchmark track evaluates myocardial infarction versus sham/reference using public cardiac transcriptomic datasets. The current protocol defines **GSE153480 as the development cohort** and **GSE216211 as an external validation cohort**; MI-E is excluded from the primary GSE216211 binary task. Additional cohorts, including GSE153485, are being treated as validation evidence rather than silently pooled into development.
-
-Cell-level data may be used for exploratory representation learning, but the primary inferential unit is the biological sample. Cells from the same biological sample must not cross evaluation boundaries or be counted as independent biological replicates.
-
-The benchmark definition is:
+The core learning object is a shared cardiac cell-state representation:
 
 ```text
-configs/benchmarks/mi-vs-sham-cardiobench.json
+expression
+   -> gene tokens
+   -> learned molecular program cross-attention
+   -> molecular representation
+   + species/assay context
+   -> contextual modulation
+   -> shared/private latent state
+   -> maturation / injury / cell-state heads
+   -> reconstruction
 ```
 
-Protocol documentation:
+The prototype intentionally begins small enough for CPU/12-GB RAM experiments:
 
-- `docs/CARDIOBENCH_WORKFLOW.md`
-- `docs/MI_SHAM_BENCHMARK.md`
+- 2,000 input genes
+- 64-dimensional gene tokens
+- 16 learned molecular program queries
+- 128-dimensional shared latent
+- 32-dimensional private latent
 
-## Scientific safeguards
+The prototype implementation is in `cardilearn/prototype/`.
 
-CardiLearn enforces the following principles in code and benchmark contracts:
+## Why the repository still contains other ML code
 
-1. **Biological groups do not cross evaluation boundaries.** Patient, donor, animal, experiment, or other declared groups remain intact.
-2. **The test partition is protected.** Model selection occurs on development data only.
-3. **Preprocessing is fitted on training data.** Imputation, scaling, supervised feature selection, and dimensionality reduction cannot inspect held-out observations.
-4. **Cell counts are not replicate counts.** Biological confidence intervals must be based on independent biological units.
-5. **Source ambiguity is a failure condition.** Metadata are validated rather than guessed.
-6. **External validation is explicit.** Study-level or other external holdouts are represented by benchmark contracts/manifests rather than inferred ad hoc.
-7. **Results are provenance-bound.** Configuration, schema, split information, fingerprints, metrics, and artifacts are intended to remain traceable.
-8. **CardiLearn and CardiEval have separate responsibilities.** CardiLearn produces models and frozen predictions; CardiEval performs independent statistical comparison.
+The existing scikit-learn models, PCA embedding, preprocessing, splitting, provenance, benchmark, calibration, and explainability utilities remain because they are **baselines or supporting research infrastructure**. They are not the new CardiLearn model.
 
-## What is complete vs data-dependent
+The obsolete standalone PyTorch MLP implementation previously exposed through `cardilearn/deep.py` has been removed from `main`.
 
-### Implemented without requiring source datasets
+## Scientific formulation
 
-- Core package and CLI architecture.
-- Dataset/schema and integrity contracts.
-- Leakage-safe splitting.
-- Train-fitted preprocessing and model registry.
-- Classification/regression training orchestration.
-- Benchmark definitions and candidate-model matrix.
-- Omics and ECG feature layers.
-- Calibration and explainability utilities.
-- Cross-study transfer machinery.
-- Provenance and artifact serialization.
-- Unit/invariant tests and continuous integration.
+CardiLearn is being developed around a multi-objective representation-learning problem. The initial core objectives are:
 
-### Requires real data before it can be claimed as validated
+- molecular reconstruction;
+- technical-view invariance;
+- anti-collapse regularization;
+- biological-state supervision;
+- maturation ordering/regression;
+- injury-state prediction.
 
-- Final benchmark performance tables.
-- Fully materialized cross-cohort results.
-- Dataset-specific feature-selection stability.
-- External validation confidence intervals based on the actual cohorts.
-- Biological interpretation of learned features.
-- Claims of superiority over existing cardiac ML methods.
+Regeneration is intentionally **not** represented as a hand-written marker score. The planned regeneration objective is a sample-level relational/ranking objective derived from evidence-backed biological contrasts. Cross-species alignment and population-state dynamics are later modules that will only be activated after the core representation passes its benchmarks.
 
-This distinction is deliberate: **absence of committed data is not evidence of absence of capability, but it also is not permission to report unverified performance.**
+## Data hierarchy and leakage controls
 
-## Reproducing the first benchmark
-
-Raw and processed source datasets are intentionally not stored in this repository. Materialize them locally:
-
-```bash
-python -m pip install -e '.[bench,bio]'
-python scripts/materialize_geo.py --accession GSE153480 --kind family_soft --cache data/raw
-python scripts/materialize_geo.py --accession GSE153480 --kind raw_tar --cache data/raw
-python scripts/materialize_geo.py --accession GSE216211 --kind family_soft --cache data/raw
-python scripts/materialize_geo.py --accession GSE216211 --kind raw_tar --cache data/raw
-```
-
-After source metadata are resolved and expression data are reduced to one row per biological sample/group, prepare:
+The canonical biological hierarchy is:
 
 ```text
-data/prepared/GSE153480/sample_features.csv
-data/prepared/GSE216211/sample_features.csv
+study -> subject -> sample -> cell
 ```
 
-Minimum required columns are:
+Cells are learning observations, but biological evidence and primary inferential comparisons must respect independent biological units. Whole studies remain intact for primary train/validation/test partitions. Train-derived feature selection and preprocessing must never inspect held-out observations.
 
-```text
-sample_id
-biological_group_id
-study_id
-injury_label
-x1 ... xN
-```
+For single-cell and single-nucleus data, CardiLearn is designed to learn a shared representation while retaining assay-aware context rather than blindly treating scRNA-seq and snRNA-seq as identical measurements.
 
-Then run:
+## Baseline strategy
 
-```bash
-python scripts/run_mi_sham_matrix.py
-```
+The first mandatory comparison is deliberately small:
 
-The expected result location is:
+1. PCA + linear probes
+2. plain MLP
+3. plain autoencoder
+4. CardiLearn v0.1
 
-```text
-runs/mi-sham-matrix/results.json
-```
+The structured model only earns additional complexity if it improves held-out biological generalization and survives shortcut/robustness tests.
 
-Final held-out evaluation must remain frozen and must not be used for tuning.
+## Validation priorities
 
-## Development and quality checks
+Primary evaluation is intended to include:
 
-Install development dependencies:
+- unseen-study prediction;
+- subject/biological-replicate integrity;
+- technical perturbation robustness;
+- study-ID shortcut probes;
+- modality/species confounding checks;
+- independent external validation when available.
 
-```bash
-python -m pip install -e '.[dev]'
-```
+Pretty embeddings or reconstruction loss alone do not establish biological validity.
 
-Run the complete test suite:
-
-```bash
-pytest -q
-```
-
-Run linting:
-
-```bash
-ruff check cardilearn tests scripts
-```
-
-The GitHub Actions workflow tests Python 3.10–3.12 on pushes to `main` and pull requests. CI is intended to verify software invariants; it does not substitute for real-data scientific validation.
-
-## Repository layout
+## Repository structure
 
 ```text
 cardilearn/
-  adapters.py          # modality-table loading and multimodal alignment
-  artifacts.py         # model/run serialization
-  benchmark_matrix.py  # reproducible candidate-model matrix
-  benchmark_runner.py  # single benchmark execution
-  benchmarks.py        # leakage-safe cross-validation
+  prototype/           # New CardiLearn v0.1 research model
+    model.py           # Gene-token + learned-program + shared/private architecture
+    losses.py          # Prototype training objectives
+  adapters.py          # Data adapters
+  benchmark_matrix.py  # Candidate-model matrix
+  benchmark_runner.py  # Benchmark execution
+  benchmarks.py        # Leakage-safe benchmark utilities
+  calibration.py       # Calibration/uncertainty metrics
   cardiobench.py       # CardiBench definitions and holdouts
-  calibration.py       # calibration and uncertainty metrics
-  config.py            # experiment configuration
-  data.py              # dataset contracts
-  ecg.py               # ECG/time-series feature extraction
-  explainability.py    # validation-set permutation importance
-  geo.py               # reproducible NCBI GEO acquisition
-  io.py                # CardiEval prediction interchange
-  metrics.py           # classification/regression metrics
-  models.py            # model registry
-  neural.py            # MLP baseline
-  omics.py             # high-dimensional omics preprocessing
-  provenance.py        # fingerprints/runtime metadata
-  selection.py         # development-only model selection
-  splitting.py         # leakage-safe deterministic splitting
-  training.py          # training and held-out evaluation
-  validation.py        # dataset integrity checks
-configs/benchmarks/    # benchmark and source manifests
-docs/                  # architecture and experiment protocols
-scripts/               # GEO materialization and benchmark execution
-tests/                 # scientific invariants and integration tests
-.github/workflows/     # continuous integration
+  data.py              # Dataset contracts
+  embeddings.py        # PCA representation baseline
+  neural.py            # Scikit-learn MLP baseline
+  provenance.py        # Run/data provenance
+  splitting.py         # Leakage-safe splitting
+  training.py          # Existing training orchestration
+  validation.py        # Dataset integrity checks
+  ...
+
+docs/
+  CARDILEARN_MODEL_V0_1.md
+  ...
+configs/
+scripts/
+tests/
 ```
+
+## Migration note
+
+As the new model is developed, `main` is the authoritative branch. New CardiLearn architecture, losses, experiments, and documentation should extend the v0.1 research direction rather than resurrecting the removed standalone deep MLP as the primary model.
+
+## Data and benchmark policy
+
+Source datasets are not committed to Git. Raw data remain externally sourced and fingerprinted. Benchmark performance is not claimed until the corresponding data have been materialized and the evaluation is independently reproduced under the declared split policy.
 
 ## Ecosystem
 
 - **CardiAgent** — cardiac challenge-agent generation
 - **CardiVex** — challenge detection and characterization
 - **CardiBench** — curated benchmarks and canonical splits
-- **CardiLearn** — real-data model training
+- **CardiLearn** — cardiac representation learning and model training
 - **CardiEval** — independent evaluation and statistical comparison
 - **CardiAtlas** — cardiac literature and omics/phenotype knowledge base
 - **CardiSim** — synthetic cardiac trajectory simulation
