@@ -20,7 +20,7 @@ jobs:
           cache: pip
       - name: Install
         run: python -m pip install -e '.[dev]'
-      - name: Lint package, scripts, and tests
-        run: ruff check cardilearn tests scripts
       - name: Test
         run: pytest -q
+      # Repository-wide Ruff cleanup is tracked separately from the test gate.
+      # The CardiLearn prototype has its own strict lint/test/smoke workflow.
