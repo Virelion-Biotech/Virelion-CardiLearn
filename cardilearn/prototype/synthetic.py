@@ -9,11 +9,12 @@ import pandas as pd
 
 @dataclass(frozen=True)
 class SyntheticConfig:
-    n_studies: int = 8
-    subjects_per_study: int = 4
+    # Fast default: suitable for a first CPU smoke test.
+    n_studies: int = 6
+    subjects_per_study: int = 2
     samples_per_subject: int = 2
-    cells_per_sample: int = 150
-    n_genes: int = 2000
+    cells_per_sample: int = 50
+    n_genes: int = 256
     n_species: int = 3
     n_assays: int = 2
     seed: int = 42
@@ -26,12 +27,12 @@ def generate_synthetic_cardiac_data(config: SyntheticConfig = SyntheticConfig())
     injury_loading = rng.normal(0, 0.15, config.n_genes)
     regeneration_loading = rng.normal(0, 0.15, config.n_genes)
     celltype_loading = rng.normal(0, 0.15, (3, config.n_genes))
-    maturity_loading[:200] += 1.0
-    maturity_loading[200:400] -= 1.0
-    injury_loading[400:550] += 1.0
-    injury_loading[550:700] -= 1.0
-    regeneration_loading[700:850] += 1.0
-    regeneration_loading[850:1000] -= 1.0
+    maturity_loading[: min(40, config.n_genes)] += 1.0
+    maturity_loading[min(40, config.n_genes): min(80, config.n_genes)] -= 1.0
+    injury_loading[min(80, config.n_genes): min(110, config.n_genes)] += 1.0
+    injury_loading[min(110, config.n_genes): min(140, config.n_genes)] -= 1.0
+    regeneration_loading[min(140, config.n_genes): min(170, config.n_genes)] += 1.0
+    regeneration_loading[min(170, config.n_genes): min(200, config.n_genes)] -= 1.0
     study_effects = rng.normal(0, 0.45, (config.n_studies, config.n_genes))
     species_effects = rng.normal(0, 0.20, (config.n_species, config.n_genes))
     assay_effects = rng.normal(0, 0.15, (config.n_assays, config.n_genes))
