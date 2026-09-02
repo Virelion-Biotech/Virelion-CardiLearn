@@ -5,7 +5,12 @@ import numpy as np
 import pandas as pd
 
 
-def study_split(obs: pd.DataFrame, seed: int = 42, train_fraction: float = 0.625, val_fraction: float = 0.125) -> dict[str, list[str]]:
+def study_split(
+    obs: pd.DataFrame,
+    seed: int = 42,
+    train_fraction: float = 0.625,
+    val_fraction: float = 0.125,
+) -> dict[str, list[str]]:
     """Split whole studies; dependent subjects/samples/cells stay together."""
     required = {"study_id", "subject_id", "sample_id"}
     missing = required.difference(obs.columns)
@@ -16,15 +21,15 @@ def study_split(obs: pd.DataFrame, seed: int = 42, train_fraction: float = 0.625
         raise ValueError("at least three studies are required")
     rng = np.random.default_rng(seed)
     rng.shuffle(studies)
-    n_train = max(1, int(round(len(studies) * train_fraction)))
-    n_val = max(1, int(round(len(studies) * val_fraction)))
+    n_train = max(1, round(len(studies) * train_fraction))
+    n_val = max(1, round(len(studies) * val_fraction))
     if n_train + n_val >= len(studies):
         n_val = 1
         n_train = len(studies) - 2
     return {
         "train": sorted(studies[:n_train].tolist()),
-        "validation": sorted(studies[n_train:n_train + n_val].tolist()),
-        "test": sorted(studies[n_train + n_val:].tolist()),
+        "validation": sorted(studies[n_train : n_train + n_val].tolist()),
+        "test": sorted(studies[n_train + n_val :].tolist()),
     }
 
 
@@ -43,6 +48,6 @@ def assert_no_hierarchy_leakage(obs: pd.DataFrame) -> None:
         raise ValueError("expected '_split' column")
     for key in ("study_id", "subject_id", "sample_id"):
         counts = obs.groupby(key)["_split"].nunique()
-        if int(counts.max()) > 1:
+        if counts.max() > 1:
             leaked = counts[counts > 1].index.tolist()[:10]
             raise AssertionError(f"{key} leakage detected: {leaked}")
