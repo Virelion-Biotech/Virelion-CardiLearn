@@ -11,6 +11,8 @@ CardiAtlas / CardiBench
         ↓
 canonical study + sample metadata
         ↓
+GEO metadata profile (descriptive only)
+        ↓
 CardiLearn real-data audit
         ↓
 feature/task eligibility
@@ -20,51 +22,49 @@ locked split
 training matrix
 ```
 
-Source expression data are not committed to GitHub. `scripts/materialize_geo.py` performs explicit GEO acquisition and records a SHA-256 checksum.
+Source expression data are not committed to GitHub. GEO acquisition records SHA-256 provenance.
 
-## Pilot studies
+## Pilot cohort
 
-### GSE185289 — pig regeneration/development/injury
+### Development/regeneration anchors
 
-Species: *Sus scrofa*  
-Modality: single-nucleus RNA-seq  
-Primary role: developmental maturation, injury, regeneration, and state ordering.
+**GSE185289 — pig** (`Sus scrofa`, snRNA-seq): fetal and postnatal control states plus apical resection, MI, and combined injury groups across postnatal timepoints. This is the primary pilot source for maturation/regeneration relational supervision.
 
-The GEO record describes fetal and postnatal control states, MI, apical resection, and combined apical-resection/MI groups across P1–P56. The accompanying publication reports cardiomyocyte and broader cardiac single-nucleus profiles and explicitly studies the extension of the regenerative window.
+**GSE130699 — mouse** (`Mus musculus`, snRNA-seq): neonatal cardiomyocyte nuclei after MI or sham at P1/P8 with 1- and 3-day collection. It is a compact regenerative-window counterpart to the pig study.
 
-This is the strongest initial pilot source for regeneration-related relational supervision, but subject/replicate mappings still have to be recovered from sample metadata before constructing training pairs.
+**GSE153480 — mouse** (`Mus musculus`, scRNA-seq): an independent neonatal MI/sham study using the same P1/P8 and 1/3-day design family. It is important because it adds an scRNA-seq measurement of the regenerative-window problem rather than another snRNA-seq study.
 
-Source: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE185289
+### Human/external injury context
 
-### GSE130699 — mouse neonatal injury/regeneration
+**GSE217494 — human** (`Homo sapiens`, CITE-seq/GEX): 22 explanted human hearts spanning healthy donors, acute MI, chronic ischemic cardiomyopathy, and non-ischemic cardiomyopathy. It is an injury/context transfer cohort, not maturation or regeneration ground truth.
 
-Species: *Mus musculus*  
-Modality: single-nucleus RNA-seq  
-Primary role: maturation, injury, regenerative-vs-non-regenerative developmental context, and temporal ordering.
+### Additional injury/context candidates
 
-The GEO record contains P1/P8 MI and sham groups at one and three days after surgery. The study therefore provides a compact cross-species counterpart to the pig regenerative dataset.
+**GSE135310 — mouse** (`Mus musculus`, scRNA-seq/CITE-seq): time-series cardiac leukocyte/myeloid profiles after permanent MI or sham. Useful for testing injury representations outside cardiomyocyte-focused data.
 
-Source: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE130699
+**GSE106472 — mouse** (`Mus musculus`, scRNA-seq): WT MI, IRF3-knockout MI, and WT non-MI reference. It is retained as a mechanistic external test, not a clean primary MI classifier, because genotype and condition are partly confounded.
 
-### GSE217494 — human myocardial-injury cellular context
+**GSE216211 — mouse** (`Mus musculus`, scRNA-seq): cardiac macrophage profiles containing sham, MI, and MI-E. It is a cell-context robustness candidate, not a whole-heart maturation/regeneration ground truth.
 
-Species: *Homo sapiens*  
-Modality: CITE-seq/GEX  
-Primary role: human injury/state representation and external cell-context validation.
+**GSE269054 — human/mouse** (`Homo sapiens` and `Mus musculus`, snRNA-seq/spatial): cross-species injury study with permanent MI, I/R, and traumatic injury contexts. It is an external spatial/cell-state validation source; I/R and traumatic injury remain separate from the primary permanent-MI label.
 
-The GEO record describes 22 explanted human hearts spanning healthy donors, acute MI, chronic ischemic cardiomyopathy, and non-ischemic cardiomyopathy. This cohort should primarily supervise/validate injury and cellular-context representations. It should **not** be used as a maturation or regeneration ground truth merely because the samples are clinically different.
+## Why the cohort was expanded
 
-Source: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE217494
+The original three-study pilot was useful for plumbing but was too confounded: pig largely represented development/regeneration, mouse neonatal injury, and human adult injury, while modality was also partly coupled to species. The expanded candidate set now contains multiple independent studies and both scRNA-seq and snRNA-seq measurements, allowing the next split-design stage to test whether learned representations survive study and assay changes.
 
-## Task eligibility
+The cohort is still **not locked**. Several studies have incomplete public subject-level replicate mappings, and some are cell-context- or genotype-specific.
 
-| Study | Representation | Maturation | Injury | Regeneration | Transition |
-|---|---:|---:|---:|---:|---:|
-| GSE185289 | yes | candidate | candidate | candidate, high priority | candidate |
-| GSE130699 | yes | candidate | candidate | candidate, high priority | candidate |
-| GSE217494 | yes | no | yes | no | no |
+## Metadata-first rule
 
-`candidate` means the study's design is compatible with the task, not that the labels have already been verified at sample level.
+Before any expression matrix is used, run:
+
+```bash
+python scripts/materialize_real_data_pilot.py
+python scripts/profile_geo_metadata.py
+python scripts/audit_real_pilot_samples.py
+```
+
+`profile_geo_metadata.py` is intentionally descriptive. It reports raw characteristic keys/values, sample IDs, titles, and organisms without converting a filename, title, or experimental label into a biological subject ID. Reconciliation remains a separate reviewed step.
 
 ## Required canonical sample metadata
 
@@ -110,11 +110,11 @@ A dataset may enter a locked CardiLearn benchmark only after all of the followin
 9. Train-only feature selection has been performed after split assignment.
 10. The resulting split manifest is frozen and hashed.
 
-## Planned pilot split
+## Split policy
 
-The three-study set is **not** sufficient by itself for the final study-held-out benchmark because a three-way split leaves very few independent studies per partition. It is therefore an integration/pipeline pilot.
+The eight-study candidate set is now large enough to begin deterministic split assignment work, but the split is still **candidate-only** until subject/replicate reconciliation and task-balance checks are complete. The primary scientific split remains study-held-out; subject-level grouping protects biological replicates inside each study.
 
-Before the first scientific claim, expand the cohort with additional independent studies so that held-out-study evaluation has several independent test studies. CardiBench's existing MI/reference and study-heldout manifests are useful candidate sources, but their sample-level biological grouping must be reconciled first.
+Before the first generalization claim, reserve multiple independent studies for final testing. Do not turn the expanded candidate list into a locked benchmark merely because it has more than six accessions.
 
 ## What must not happen
 
@@ -124,13 +124,17 @@ Before the first scientific claim, expand the cohort with additional independent
 - No study ID or other provenance field used as biological input.
 - No assumption that scRNA-seq and snRNA-seq are biologically identical measurements.
 - No longitudinal "same-cell" claim from ordinary destructive single-cell sampling.
+- No silent subject inference from sample-name patterns.
+- No mixing permanent MI, I/R, genotype perturbation, or traumatic injury into a single undifferentiated injury label.
 
 ## Output artifacts
 
-The audit stage writes:
+The audit stage is expected to write:
 
 ```text
 runs/real-data-pilot-v0.1/manifest_audit.json
+runs/real-data-pilot-v0.1/metadata_profile.json
+runs/real-data-pilot-v0.1/sample_audit.json
 ```
 
 Later materialization will add dataset/sample manifests, checksums, frozen split assignments, and feature-selection records.
