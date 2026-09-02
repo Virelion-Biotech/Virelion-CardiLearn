@@ -13,7 +13,6 @@ relational objective in a later training stage.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 import torch
 from torch import nn
@@ -25,7 +24,7 @@ class CardiLearnOutput:
     z_private: torch.Tensor
     maturity: torch.Tensor
     injury: torch.Tensor
-    cell_type: Optional[torch.Tensor]
+    cell_type: torch.Tensor | None
     reconstruction: torch.Tensor
     program_tokens: torch.Tensor
     program_attention: torch.Tensor
