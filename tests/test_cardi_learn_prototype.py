@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import numpy as np
-import torch
+import pytest
+
+
+torch = pytest.importorskip("torch")
 
 from cardilearn.prototype.augmentations import make_two_views
-from cardilearn.prototype.data import CardiLearnCellDataset, select_genes_train_only
+from cardilearn.prototype.data import select_genes_train_only
 from cardilearn.prototype.model import CardiLearnProto
 from cardilearn.prototype.splits import assert_no_hierarchy_leakage, assign_split, study_split
 from cardilearn.prototype.synthetic import SyntheticConfig, generate_synthetic_cardiac_data
@@ -44,7 +47,8 @@ def test_gene_selection_uses_training_only():
     x[:5, 0] = np.arange(5)
     x[:5, 1] = 1
     x[5:, 3] = np.arange(5) * 100
-    metadata = __import__("pandas").DataFrame({
+    import pandas as pd
+    metadata = pd.DataFrame({
         "_split": ["train"] * 5 + ["test"] * 5,
         "study_id": ["A"] * 5 + ["B"] * 5,
         "subject_id": [f"s{i}" for i in range(10)],
