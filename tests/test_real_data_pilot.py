@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+import gzip
 import json
 
+import pandas as pd
 import pytest
 
 from cardilearn.real_data import (
+    StudySpec,
     audit_manifest,
     audit_sample_metadata,
+    canonicalize_geo_samples,
     load_manifest,
+    parse_geo_family_soft,
 )
 
 
@@ -68,3 +73,65 @@ def test_duplicate_study_ids_are_rejected(tmp_path):
     path.write_text(json.dumps(manifest), encoding="utf-8")
     with pytest.raises(ValueError, match="duplicate study_id"):
         load_manifest(path)
+
+
+def test_geo_family_soft_parser_preserves_raw_characteristics(tmp_path):
+    content = (
+        "^SAMPLE = GSM000001\n"
+        "!Sample_geo_accession = GSM000001\n"
+        "!Sample_title = Example MI sample\n"
+        "!Sample_characteristics_ch1 = subject: mouse-01\n"
+        "!Sample_characteristics_ch1 = condition: myocardial infarction\n"
+        "!Sample_characteristics_ch1 = timepoint: day 3\n"
+        "!Sample_characteristics_ch1 = tissue: left ventricle\n"
+    )
+    path = tmp_path / "family.soft.gz"
+    with gzip.open(path, "wt", encoding="utf-8") as handle:
+        handle.write(content)
+
+    frame = parse_geo_family_soft(path)
+    assert len(frame) == 1
+    assert frame.loc[0, "sample_id"] == "GSM000001"
+    assert frame.loc[0, "raw_characteristics"]["subject"] == ["mouse-01"]
+
+
+def test_canonicalization_only_controls_known_condition_terms():
+    study = StudySpec(
+        study_id="study:test",
+        accession="GSE999999",
+        source="GEO",
+        species="Mus musculus",
+        modality="snRNA-seq",
+        role="development_regeneration_injury",
+        evidence_tier="A",
+        tasks=("representation", "injury"),
+        rationale="test",
+    )
+    raw = pd.DataFrame(
+        [
+            {
+                "sample_id": "GSM1",
+                "raw_characteristics": {
+                    "subject": ["M1"],
+                    "condition": ["MI"],
+                    "timepoint": ["day 3"],
+                    "tissue": ["heart"],
+                },
+            },
+            {
+                "sample_id": "GSM2",
+                "raw_characteristics": {
+                    "subject": ["M2"],
+                    "condition": ["ARP1MIP28-P35"],
+                    "timepoint": ["P35"],
+                    "tissue": ["heart"],
+                },
+            },
+        ]
+    )
+
+    canonical = canonicalize_geo_samples(raw, study)
+    assert canonical.loc[0, "condition"] == "myocardial_injury"
+    assert canonical.loc[0, "condition_status"] == "controlled"
+    assert canonical.loc[1, "condition"] == ""
+    assert canonical.loc[1, "condition_status"] == "unresolved"
