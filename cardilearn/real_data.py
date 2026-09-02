@@ -10,7 +10,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
+import gzip
 import json
+import re
+
+import pandas as pd
 
 
 @dataclass(frozen=True)
@@ -174,12 +178,15 @@ def audit_manifest(studies: Iterable[StudySpec]) -> PilotAudit:
                 )
             )
 
-        if "regeneration" in study.tasks and study.role != "regeneration":
+        if "regeneration" in study.tasks and study.role not in {
+            "regeneration",
+            "development_regeneration_injury",
+        }:
             audit.issues.append(
                 AuditIssue(
                     "warning",
                     "REGENERATION_ROLE_REVIEW",
-                    "regeneration is listed as a task but the study role is not 'regeneration'; manual review required",
+                    "regeneration is listed as a task but the study role does not explicitly identify regenerative evidence",
                     study.study_id,
                 )
             )
@@ -223,3 +230,142 @@ def audit_sample_metadata(
                 )
             )
     return issues
+
+
+def _parse_characteristic(value: str) -> tuple[str, str]:
+    """Split a GEO characteristic such as 'subject: animal-01' conservatively."""
+    text = value.strip()
+    if ":" not in text:
+        return "raw", text
+    key, raw_value = text.split(":", 1)
+    key = re.sub(r"[^a-z0-9]+", "_", key.strip().lower()).strip("_")
+    return key or "raw", raw_value.strip()
+
+
+def parse_geo_family_soft(path: str | Path) -> pd.DataFrame:
+    """Parse sample-level fields from a GEO family-SOFT archive.
+
+    Raw characteristic strings are retained under ``raw_characteristics`` so
+    later curation can inspect exactly what the source provided. No biological
+    condition is inferred here.
+    """
+    opener = gzip.open if str(path).endswith(".gz") else open
+    rows: list[dict[str, Any]] = []
+    current: dict[str, Any] | None = None
+    characteristics: dict[str, list[str]] = {}
+
+    def flush() -> None:
+        nonlocal current, characteristics
+        if current is None:
+            return
+        current["raw_characteristics"] = dict(characteristics)
+        rows.append(current)
+        current = None
+        characteristics = {}
+
+    with opener(path, "rt", encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            line = line.rstrip("\n")
+            if line.startswith("^SAMPLE = "):
+                flush()
+                accession = line.split("=", 1)[1].strip()
+                current = {"sample_id": accession}
+                continue
+            if current is None or not line.startswith("!Sample_"):
+                continue
+            field, value = line[1:].split(" = ", 1)
+            key = field[len("Sample_") :].lower()
+            if key.startswith("characteristics_ch1"):
+                char_key, char_value = _parse_characteristic(value)
+                characteristics.setdefault(char_key, []).append(char_value)
+            elif key == "geo_accession":
+                current["sample_id"] = value.strip()
+            elif key in {"title", "source_name_ch1", "organism_ch1"}:
+                current[key] = value.strip()
+
+    flush()
+    return pd.DataFrame(rows)
+
+
+def _first_characteristic(
+    characteristics: dict[str, list[str]],
+    keys: tuple[str, ...],
+) -> str | None:
+    for key in keys:
+        values = characteristics.get(key)
+        if values:
+            value = values[0].strip()
+            if value:
+                return value
+    return None
+
+
+def _controlled_condition(value: str | None) -> str | None:
+    if not value:
+        return None
+    normalized = re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+    if normalized in {"sham", "control", "ctl", "reference", "healthy"}:
+        return "reference"
+    if normalized in {"mi", "myocardial infarction", "infarct", "myocardial injury"}:
+        return "myocardial_injury"
+    return None
+
+
+def canonicalize_geo_samples(
+    raw: pd.DataFrame,
+    study: StudySpec,
+) -> pd.DataFrame:
+    """Convert parsed GEO sample fields to CardiLearn's canonical sample table."""
+    rows: list[dict[str, Any]] = []
+    for _, row in raw.iterrows():
+        characteristics = row.get("raw_characteristics") or {}
+        subject = _first_characteristic(
+            characteristics,
+            ("subject_id", "subject", "donor_id", "donor", "animal_id", "animal", "individual", "patient_id", "patient"),
+        )
+        condition_raw = _first_characteristic(
+            characteristics,
+            ("condition", "group", "phenotype", "treatment", "surgery"),
+        )
+        condition = _controlled_condition(condition_raw)
+        timepoint = _first_characteristic(
+            characteristics,
+            ("timepoint", "collection_timepoint", "post_surgical_day", "day_post_surgery", "days_post_injury"),
+        )
+        tissue = _first_characteristic(characteristics, ("tissue", "tissue_type"))
+        region = _first_characteristic(characteristics, ("region", "tissue_region", "zone"))
+        cell_context = _first_characteristic(
+            characteristics,
+            ("cell_type", "cell_context", "cell", "celltype"),
+        )
+        technical = _first_characteristic(
+            characteristics,
+            ("technical_replicate", "is_technical_replicate"),
+        )
+        technical_value = None if technical is None else technical.lower() in {"1", "true", "yes", "y", "t"}
+
+        rows.append(
+            {
+                "study_id": study.study_id,
+                "accession": study.accession,
+                "sample_id": str(row.get("sample_id") or "").strip(),
+                "subject_id": subject,
+                "condition": condition or "",
+                "condition_raw": condition_raw or "",
+                "condition_status": "controlled" if condition else "unresolved",
+                "timepoint": timepoint or "",
+                "modality": study.modality,
+                "species": study.species,
+                "tissue": tissue or "",
+                "region": region or "",
+                "cell_context": cell_context or "",
+                "is_technical_replicate": technical_value,
+                "metadata_quality": "candidate_requires_review",
+                "title": row.get("title", ""),
+                "source_name": row.get("source_name_ch1", ""),
+                "source_organism": row.get("organism_ch1", ""),
+                "raw_characteristics": json.dumps(characteristics, sort_keys=True),
+            }
+        )
+
+    return pd.DataFrame(rows)
