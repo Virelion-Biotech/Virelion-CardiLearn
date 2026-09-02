@@ -63,6 +63,27 @@ Cells are learning observations, but biological evidence and primary inferential
 
 For single-cell and single-nucleus data, CardiLearn is designed to learn a shared representation while retaining assay-aware context rather than blindly treating scRNA-seq and snRNA-seq as identical measurements.
 
+## Real-data pilot
+
+The repository now contains a metadata-first pilot manifest and GEO family-SOFT parser in `cardilearn/real_data.py`. The pilot currently contains three deliberately complementary candidates:
+
+- **GSE185289** — pig single-nucleus data spanning fetal/postnatal, injury, and regenerative/non-regenerative contexts.
+- **GSE130699** — neonatal mouse cardiomyocyte single-nucleus data spanning P1/P8 MI and sham conditions at one and three days.
+- **GSE217494** — human CITE-seq/GEX data spanning healthy donors, acute MI, chronic ischemic cardiomyopathy, and non-ischemic cardiomyopathy.
+
+These are **candidate studies, not a locked benchmark**. The metadata layer must first recover and reconcile biological subject IDs, sample relationships, technical replicates, condition labels, tissue/region, and timepoints. The three-study set is intentionally too small for a final multi-study benchmark by itself.
+
+Useful commands:
+
+```bash
+python scripts/audit_real_data_pilot.py
+python scripts/materialize_real_data_pilot.py
+```
+
+The second command downloads only GEO family-SOFT metadata and writes canonical candidate sample metadata. It does not download expression matrices. Expression acquisition remains an explicit later step.
+
+Detailed policy: `docs/REAL_DATA_PILOT_V0_1.md`.
+
 ## Baseline strategy
 
 The first mandatory comparison is deliberately small:
@@ -94,6 +115,7 @@ cardilearn/
   prototype/           # New CardiLearn v0.1 research model
     model.py           # Gene-token + learned-program + shared/private architecture
     losses.py          # Prototype training objectives
+  real_data.py         # Real-data pilot contracts + conservative GEO metadata parser
   adapters.py          # Data adapters
   benchmark_matrix.py  # Candidate-model matrix
   benchmark_runner.py  # Benchmark execution
@@ -111,15 +133,21 @@ cardilearn/
 
 docs/
   CARDILEARN_MODEL_V0_1.md
+  REAL_DATA_PILOT_V0_1.md
   ...
 configs/
+  prototype_v0_1.yaml
+  real_data_pilot_v0_1.json
 scripts/
+  materialize_real_data_pilot.py
+  audit_real_data_pilot.py
+  ...
 tests/
 ```
 
 ## Migration note
 
-As the new model is developed, `main` is the authoritative branch. New CardiLearn architecture, losses, experiments, and documentation should extend the v0.1 research direction rather than resurrecting the removed standalone deep MLP as the primary model.
+As the new model is developed, `main` is the authoritative branch. New CardiLearn architecture, losses, experiments, real-data integration, and documentation should extend the v0.1 research direction rather than resurrecting the removed standalone deep MLP as the primary model.
 
 ## Data and benchmark policy
 
