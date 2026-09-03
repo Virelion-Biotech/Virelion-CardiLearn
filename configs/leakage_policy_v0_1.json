@@ -1,0 +1,30 @@
+{
+  "name": "cardilearn_step10_leakage_policy_v0_1",
+  "status": "code_enforced_real_data_not_locked",
+  "independence_unit": "study_family_id",
+  "hierarchy": ["study_family_id", "study_id", "subject_id", "sample_id", "cell"],
+  "hard_gates": {
+    "missing_study_id": true,
+    "missing_subject_id": true,
+    "missing_sample_id": true,
+    "study_family_cross_split": true,
+    "study_cross_split": true,
+    "subject_cross_split": true,
+    "sample_cross_split": true,
+    "unknown_partition": true,
+    "missing_partition": true
+  },
+  "expected_partitions": ["train", "validation", "test"],
+  "test_protected": true,
+  "feature_selection_fit": "train_only",
+  "normalization_fit": "train_only",
+  "imputation_fit": "train_only",
+  "dimensionality_reduction_fit": "train_only",
+  "threshold_selection": "validation_only",
+  "architecture_selection": "train_validation_only",
+  "early_stopping": "validation_only",
+  "exact_expression_collision_check": "diagnostic_warning",
+  "same_cell_longitudinal_claim": false,
+  "silent_metadata_inference": false,
+  "split_manifest_hash": "sha256"
+}
