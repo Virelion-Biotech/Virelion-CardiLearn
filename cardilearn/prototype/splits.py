@@ -10,33 +10,43 @@ def study_split(
     seed: int = 42,
     train_fraction: float = 0.625,
     val_fraction: float = 0.125,
+    group_column: str = "study_id",
 ) -> dict[str, list[str]]:
-    """Split whole studies; dependent subjects/samples/cells stay together."""
-    required = {"study_id", "subject_id", "sample_id"}
+    """Split independent groups while keeping linked studies together.
+
+    ``group_column='study_family_id'`` should be used when a registry has
+    identified related accessions that are not independent experiments.
+    The returned split names contain group IDs, not individual study IDs.
+    """
+    required = {"study_id", "subject_id", "sample_id", group_column}
     missing = required.difference(obs.columns)
     if missing:
         raise ValueError(f"missing required columns: {sorted(missing)}")
-    studies = np.array(sorted(obs["study_id"].unique()), dtype=object)
-    if len(studies) < 3:
-        raise ValueError("at least three studies are required")
+    groups = np.array(sorted(obs[group_column].dropna().unique()), dtype=object)
+    if len(groups) < 3:
+        raise ValueError("at least three independent groups are required")
     rng = np.random.default_rng(seed)
-    rng.shuffle(studies)
-    n_train = max(1, round(len(studies) * train_fraction))
-    n_val = max(1, round(len(studies) * val_fraction))
-    if n_train + n_val >= len(studies):
+    rng.shuffle(groups)
+    n_train = max(1, round(len(groups) * train_fraction))
+    n_val = max(1, round(len(groups) * val_fraction))
+    if n_train + n_val >= len(groups):
         n_val = 1
-        n_train = len(studies) - 2
+        n_train = len(groups) - 2
     return {
-        "train": sorted(studies[:n_train].tolist()),
-        "validation": sorted(studies[n_train : n_train + n_val].tolist()),
-        "test": sorted(studies[n_train + n_val :].tolist()),
+        "train": sorted(groups[:n_train].tolist()),
+        "validation": sorted(groups[n_train : n_train + n_val].tolist()),
+        "test": sorted(groups[n_train + n_val :].tolist()),
+        "group_column": group_column,
     }
 
 
-def assign_split(obs: pd.DataFrame, splits: dict[str, list[str]]) -> pd.DataFrame:
+def assign_split(obs: pd.DataFrame, splits: dict[str, list[str]], *, group_column: str = "study_id") -> pd.DataFrame:
+    """Assign observations to splits using an explicit independence group."""
+    if group_column not in obs.columns:
+        raise ValueError(f"missing split group column: {group_column}")
     out = obs.copy()
-    lookup = {study: name for name, studies in splits.items() for study in studies}
-    out["_split"] = out["study_id"].map(lookup)
+    lookup = {group: name for name, groups in splits.items() if name != "group_column" for group in groups}
+    out["_split"] = out[group_column].map(lookup)
     if out["_split"].isna().any():
         raise ValueError("some observations do not belong to a split")
     return out
@@ -51,3 +61,8 @@ def assert_no_hierarchy_leakage(obs: pd.DataFrame) -> None:
         if counts.max() > 1:
             leaked = counts[counts > 1].index.tolist()[:10]
             raise AssertionError(f"{key} leakage detected: {leaked}")
+    if "study_family_id" in obs.columns:
+        counts = obs.groupby("study_family_id")["_split"].nunique()
+        if counts.max() > 1:
+            leaked = counts[counts > 1].index.tolist()[:10]
+            raise AssertionError(f"study_family_id leakage detected: {leaked}")
