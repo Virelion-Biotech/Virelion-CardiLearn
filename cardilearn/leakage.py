@@ -1,9 +1,4 @@
-"""Explicit data-leakage controls for CardiLearn.
-
-This module treats biological hierarchy, study-family independence, frozen split
-assignments, and optional exact feature duplicates as separate leakage surfaces.
-It intentionally cannot infer biological relationships from expression alone.
-"""
+"""Explicit data-leakage controls for CardiLearn."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -44,15 +39,16 @@ def audit_hierarchy(
     *,
     split_column: str = "_split",
     hierarchy_columns: Iterable[str] = HIERARCHY_COLUMNS,
+    require_all_partitions: bool = True,
 ) -> list[LeakageFinding]:
-    """Return findings for IDs appearing in multiple partitions or missing IDs.
+    """Audit hierarchy consistency without requiring all partitions by default.
 
-    Repeated sample IDs are expected in cell/nucleus-level tables. The relevant
-    invariant is that one sample must belong to only one partition, not that its
-    identifier may occur only once.
+    ``require_all_partitions=True`` is appropriate for a locked benchmark.
+    Feature-selection and preprocessing stages may operate on train-only data and
+    therefore can explicitly set it to ``False`` while still enforcing identity
+    integrity and split-label validity.
     """
-    required = set(REQUIRED_FOR_AUDIT)
-    required.add(split_column)
+    required = {"study_id", "subject_id", "sample_id", split_column}
     missing = sorted(required.difference(frame.columns))
     if missing:
         raise ValueError(f"missing leakage-audit columns: {missing}")
@@ -71,9 +67,12 @@ def audit_hierarchy(
                     f"{missing_count} observations have no {column}; they cannot be protected by hierarchy grouping",
                 )
             )
-        counts = frame.assign(_hierarchy_key=series).dropna(subset=["_hierarchy_key"]).groupby(
-            "_hierarchy_key", dropna=True
-        )[split_column].nunique()
+        counts = (
+            frame.assign(_hierarchy_key=series)
+            .dropna(subset=["_hierarchy_key"])
+            .groupby("_hierarchy_key", dropna=True)[split_column]
+            .nunique()
+        )
         leaked = counts[counts > 1].index.astype(str).tolist()
         if leaked:
             findings.append(
@@ -87,16 +86,16 @@ def audit_hierarchy(
 
     splits = set(frame[split_column].dropna().astype(str))
     expected = {"train", "validation", "test"}
-    missing_splits = sorted(expected.difference(splits))
-    if missing_splits:
-        findings.append(
-            LeakageFinding(
-                "blocking",
-                "MISSING_PARTITION",
-                f"required partition(s) are absent: {missing_splits}",
+    if require_all_partitions:
+        missing_splits = sorted(expected.difference(splits))
+        if missing_splits:
+            findings.append(
+                LeakageFinding(
+                    "blocking",
+                    "MISSING_PARTITION",
+                    f"required partition(s) are absent: {missing_splits}",
+                )
             )
-        )
-
     unknown_splits = sorted(splits.difference(expected))
     if unknown_splits:
         findings.append(
@@ -106,13 +105,21 @@ def audit_hierarchy(
                 f"unknown partition label(s): {unknown_splits}",
             )
         )
-
     return findings
 
 
-def assert_no_leakage(frame: pd.DataFrame, *, split_column: str = "_split") -> None:
+def assert_no_leakage(
+    frame: pd.DataFrame,
+    *,
+    split_column: str = "_split",
+    require_all_partitions: bool = True,
+) -> None:
     """Raise if any blocking hierarchy/partition finding exists."""
-    findings = audit_hierarchy(frame, split_column=split_column)
+    findings = audit_hierarchy(
+        frame,
+        split_column=split_column,
+        require_all_partitions=require_all_partitions,
+    )
     blocking = [finding for finding in findings if finding.severity == "blocking"]
     if blocking:
         raise LeakageError(json.dumps([f.to_dict() for f in blocking], sort_keys=True))
@@ -125,19 +132,13 @@ def freeze_split_manifest(
     split_column: str = "_split",
     version: str = "v0.1",
 ) -> dict[str, Any]:
-    """Create a deterministic, hashable split manifest from group assignments.
-
-    The manifest contains one record per independent group, never per cell, so
-    it can be versioned without committing expression data.
-    """
-    assert_no_leakage(frame, split_column=split_column)
+    """Create a deterministic, hashable split manifest from group assignments."""
+    assert_no_leakage(frame, split_column=split_column, require_all_partitions=True)
     if group_column not in frame.columns:
         raise ValueError(f"missing group column: {group_column}")
-
     groups = frame[[group_column, split_column]].drop_duplicates().sort_values(group_column)
     if groups[group_column].duplicated().any():
         raise LeakageError(f"group {group_column} has multiple split assignments")
-
     records = [
         {"group": str(row[group_column]), "split": str(row[split_column])}
         for _, row in groups.iterrows()
@@ -159,10 +160,7 @@ def freeze_split_manifest(
     return payload
 
 
-def verify_frozen_split_manifest(
-    frame: pd.DataFrame,
-    manifest: dict[str, Any],
-) -> None:
+def verify_frozen_split_manifest(frame: pd.DataFrame, manifest: dict[str, Any]) -> None:
     """Verify that current group assignments exactly match a saved manifest."""
     group_column = str(manifest.get("group_column", ""))
     split_column = str(manifest.get("split_column", "_split"))
@@ -172,7 +170,6 @@ def verify_frozen_split_manifest(
         raise ValueError("invalid frozen split manifest")
     if group_column not in frame.columns or split_column not in frame.columns:
         raise ValueError("frame is missing frozen split columns")
-
     current = frame[[group_column, split_column]].drop_duplicates().sort_values(group_column)
     current_records = [
         {"group": str(row[group_column]), "split": str(row[split_column])}
@@ -180,7 +177,6 @@ def verify_frozen_split_manifest(
     ]
     if current_records != records:
         raise LeakageError("current split assignments differ from frozen manifest")
-
     payload = {
         "version": manifest.get("version"),
         "group_column": group_column,
@@ -193,26 +189,16 @@ def verify_frozen_split_manifest(
         raise LeakageError("frozen split manifest hash does not match its contents")
 
 
-def exact_cross_split_feature_collisions(
-    X: np.ndarray,
-    splits: Iterable[str],
-) -> dict[str, Any]:
-    """Diagnose exact duplicated rows occurring across different partitions.
-
-    Exact row equality is intentionally diagnostic rather than blocking: sparse
-    single-cell/nucleus count vectors can legitimately collide across distinct
-    cells. Hierarchy leakage remains the hard safety gate.
-    """
+def exact_cross_split_feature_collisions(X: np.ndarray, splits: Iterable[str]) -> dict[str, Any]:
+    """Diagnose exact duplicated rows across partitions without treating them as proof of leakage."""
     X = np.asarray(X)
     split_values = np.asarray(list(splits), dtype=object)
     if X.ndim != 2 or len(split_values) != len(X):
         raise ValueError("X and splits have incompatible shapes")
-
     owners: dict[str, set[str]] = {}
     for row, split in zip(X, split_values):
         digest = hashlib.sha256(np.ascontiguousarray(row).tobytes()).hexdigest()
         owners.setdefault(digest, set()).add(str(split))
-
     collisions = sorted(digest for digest, split_set in owners.items() if len(split_set) > 1)
     return {
         "unique_row_hashes": len(owners),
