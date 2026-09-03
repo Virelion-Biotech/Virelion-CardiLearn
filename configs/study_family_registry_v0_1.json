@@ -1,0 +1,14 @@
+{
+  "name": "cardilearn_study_family_registry_v0_1",
+  "purpose": "Prevent linked GEO series or shared experimental programs from being treated as independent held-out studies.",
+  "status": "candidate",
+  "families": {
+    "wang_olson_neonatal_regeneration": {
+      "accessions": ["GSE130699", "GSE153480"],
+      "reason": "GSE130699 and GSE153480 describe the same neonatal P1/P8 MI-versus-sham experimental program from the Wang/Cui/Tan/Olson group and must not be counted as independent test studies until sample overlap is explicitly resolved.",
+      "split_policy": "same_partition"
+    }
+  },
+  "unmapped_policy": "accession_is_own_family_until_related_series_are_reconciled",
+  "review_required_for_linkage": true
+}
