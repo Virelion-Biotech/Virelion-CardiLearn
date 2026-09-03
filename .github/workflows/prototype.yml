@@ -16,11 +16,11 @@ jobs:
           cache: pip
       - name: Install package and prototype dependencies
         run: python -m pip install -e '.[dev]' && python -m pip install 'torch>=2.2,<3'
-      - name: Run prototype lint
+      - name: Run prototype and interpretability lint
         run: >-
-          ruff check cardilearn/prototype cardilearn/leakage.py cardilearn/cross_species.py
-          scripts/run_prototype.py tests/test_cardi_learn_prototype.py tests/test_leakage.py
-          tests/test_cross_species.py --select E9,F
+          ruff check cardilearn/prototype cardilearn/interpretability cardilearn/leakage.py cardilearn/cross_species.py
+          scripts/run_prototype.py tests/test_cardi_learn_prototype.py tests/test_interpretability.py
+          tests/test_leakage.py tests/test_cross_species.py --select E9,F
       - name: Run prototype tests
         run: pytest -q tests/test_cardi_learn_prototype.py
       - name: Run Step 10 leakage tests
@@ -32,5 +32,7 @@ jobs:
           python -c "import torch; from cardilearn.prototype.species_adversary import SpeciesAdversary;
           z=torch.randn(8,16,requires_grad=True); m=SpeciesAdversary(16,3,coefficient=0.5);
           y=m(z); y.sum().backward(); assert y.shape==(8,3) and z.grad is not None"
+      - name: Run Step 13 interpretability tests
+        run: pytest -q tests/test_interpretability.py
       - name: Run synthetic smoke experiment
         run: python scripts/run_prototype.py
