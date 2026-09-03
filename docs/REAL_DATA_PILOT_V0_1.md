@@ -15,6 +15,8 @@ GEO metadata profile (descriptive only)
         ↓
 CardiLearn real-data audit
         ↓
+study-family / subject reconciliation
+        ↓
 feature/task eligibility
         ↓
 locked split
@@ -32,7 +34,7 @@ Source expression data are not committed to GitHub. GEO acquisition records SHA-
 
 **GSE130699 — mouse** (`Mus musculus`, snRNA-seq): neonatal cardiomyocyte nuclei after MI or sham at P1/P8 with 1- and 3-day collection. It is a compact regenerative-window counterpart to the pig study.
 
-**GSE153480 — mouse** (`Mus musculus`, scRNA-seq): an independent neonatal MI/sham study using the same P1/P8 and 1/3-day design family. It is important because it adds an scRNA-seq measurement of the regenerative-window problem rather than another snRNA-seq study.
+**GSE153480 — mouse** (`Mus musculus`, scRNA-seq): neonatal MI/sham data using the same P1/P8 and 1/3-day experimental design family. It is valuable for scRNA-versus-snRNA robustness, but it is **not automatically an independent study** for held-out evaluation because it is closely linked to GSE130699 and is explicitly grouped with it in the study-family registry pending sample-overlap reconciliation.
 
 ### Human/external injury context
 
@@ -50,9 +52,25 @@ Source expression data are not committed to GitHub. GEO acquisition records SHA-
 
 ## Why the cohort was expanded
 
-The original three-study pilot was useful for plumbing but was too confounded: pig largely represented development/regeneration, mouse neonatal injury, and human adult injury, while modality was also partly coupled to species. The expanded candidate set now contains multiple independent studies and both scRNA-seq and snRNA-seq measurements, allowing the next split-design stage to test whether learned representations survive study and assay changes.
+The original three-study pilot was useful for plumbing but was too confounded: pig largely represented development/regeneration, mouse neonatal injury, and human adult injury, while modality was also partly coupled to species. The expanded candidate set now contains multiple accessions and both scRNA-seq and snRNA-seq measurements, allowing the next split-design stage to test whether learned representations survive study and assay changes.
+
+However, **accession count is not independent-study count**. Related series can belong to the same biological study family. CardiLearn therefore maintains a versioned study-family registry and uses family identity—not raw accession count—as the conservative independence unit for external evaluation.
 
 The cohort is still **not locked**. Several studies have incomplete public subject-level replicate mappings, and some are cell-context- or genotype-specific.
+
+## Study-family protection
+
+The current registry explicitly groups:
+
+```text
+wang_olson_neonatal_regeneration
+├── GSE130699
+└── GSE153480
+```
+
+These series both describe the Wang/Cui/Tan/Olson neonatal P1/P8 MI-versus-sham program. The registry intentionally keeps them in the same future partition until exact sample overlap and biological replicate relationships are reconciled.
+
+Unmapped accessions receive deterministic per-accession families rather than being assumed related or independent. New linkages must be added through reviewed registry changes.
 
 ## Metadata-first rule
 
@@ -90,10 +108,10 @@ Unknown values remain unknown. Missing subject identifiers are a blocking proble
 ## Required hierarchy
 
 ```text
-study → subject → sample → cell
+study family → study → subject → sample → cell
 ```
 
-Technical replicates remain attached to their biological parent. Samples from the same animal/donor must never cross train/validation/test partitions.
+Technical replicates remain attached to their biological parent. Samples from the same animal/donor must never cross train/validation/test partitions. Linked study series must also remain in the same partition.
 
 ## Lock criteria
 
@@ -105,16 +123,16 @@ A dataset may enter a locked CardiLearn benchmark only after all of the followin
 4. Technical replicate grouping is resolved.
 5. Condition and timepoint labels are normalized without ambiguous guessing.
 6. Modality and tissue are verified.
-7. The study passes hierarchy-leakage checks.
+7. Study-family and hierarchy leakage checks pass.
 8. The study's eligible learning tasks are explicitly declared.
 9. Train-only feature selection has been performed after split assignment.
 10. The resulting split manifest is frozen and hashed.
 
 ## Split policy
 
-The eight-study candidate set is now large enough to begin deterministic split assignment work, but the split is still **candidate-only** until subject/replicate reconciliation and task-balance checks are complete. The primary scientific split remains study-held-out; subject-level grouping protects biological replicates inside each study.
+The eight-accession candidate set is now large enough to begin deterministic split-assignment work, but the split is still **candidate-only** until subject/replicate reconciliation and task-balance checks are complete. The primary scientific split remains study-held-out; study families are the independence unit and subject-level grouping protects biological replicates inside each study.
 
-Before the first generalization claim, reserve multiple independent studies for final testing. Do not turn the expanded candidate list into a locked benchmark merely because it has more than six accessions.
+Before the first generalization claim, reserve multiple independent study families for final testing. Do not turn the candidate list into a locked benchmark merely because it contains eight accessions.
 
 ## What must not happen
 
@@ -126,6 +144,7 @@ Before the first generalization claim, reserve multiple independent studies for 
 - No longitudinal "same-cell" claim from ordinary destructive single-cell sampling.
 - No silent subject inference from sample-name patterns.
 - No mixing permanent MI, I/R, genotype perturbation, or traumatic injury into a single undifferentiated injury label.
+- No counting linked accessions as independent held-out studies.
 
 ## Output artifacts
 
