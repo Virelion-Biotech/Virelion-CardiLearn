@@ -72,25 +72,39 @@ These series both describe the Wang/Cui/Tan/Olson neonatal P1/P8 MI-versus-sham 
 
 Unmapped accessions receive deterministic per-accession families rather than being assumed related or independent. New linkages must be added through reviewed registry changes.
 
-## Metadata-first rule
+## Sample reconciliation
 
-Before any expression matrix is used, run:
+Run the metadata pipeline first:
 
 ```bash
 python scripts/materialize_real_data_pilot.py
 python scripts/profile_geo_metadata.py
+python scripts/reconcile_real_pilot_samples.py
 python scripts/audit_real_pilot_samples.py
 ```
 
-`profile_geo_metadata.py` is intentionally descriptive. It reports raw characteristic keys/values, sample IDs, titles, and organisms without converting a filename, title, or experimental label into a biological subject ID. Reconciliation remains a separate reviewed step.
+`reconcile_real_pilot_samples.py` is deliberately conservative. It can generate **candidate** biological-parent IDs when the GEO source structure supports them, but it never promotes those candidates to `verified` automatically.
+
+For GSE185289, GEO sample records explicitly expose fields such as `arp1`, `mip28`, harvest postnatal day, and heart zone; for example GSM5610172 is `AR1_MI28_P30_8064AZ`, source name `8064AZ`, with both `arp1=yes` and `mip28=yes`, P30 harvest, and border-zone tissue. This supports a candidate animal identifier (`8064`) but does not by itself replace final study-level reconciliation. citeturn202637view0
+
+For GSE130699, public sample records expose developmental surgery age, post-surgical day, MI/sham, and cardiomyocyte-nucleus context, but the reviewed record does not provide an explicit biological animal identifier; therefore the pipeline leaves subject identity unresolved rather than treating GSM IDs as animals. citeturn351680search2
+
+For GSE153480, the eight samples are explicitly P1/P8 MI/sham at 1/3 days, but the public series record alone is insufficient to establish independent biological animals. It remains blocked for subject-level locking. citeturn641870search0
+
+For GSE217494, the public series contains 44 GEO records but describes 22 explanted human hearts; paired `GEX_sampleN` and `Ab_sampleN` records therefore represent paired measurements, not independent hearts. citeturn351680search0
+
+The current candidate reconciliation does **not** assert that these mappings are verified. The reviewed output has three states: `verified`, `high_candidate`, and `unresolved`. Only `verified` rows can become eligible for a future locked benchmark.
 
 ## Required canonical sample metadata
 
 A recovered sample table must contain at least:
 
 ```text
+study_family_id
 study_id
 subject_id
+subject_id_candidate
+subject_confidence
 sample_id
 condition
 timepoint
@@ -103,7 +117,7 @@ replicate_group
 is_technical_replicate
 ```
 
-Unknown values remain unknown. Missing subject identifiers are a blocking problem for primary biological inference.
+Unknown values remain unknown. Missing verified subject identifiers are a blocking problem for primary biological inference.
 
 ## Required hierarchy
 
@@ -153,6 +167,7 @@ The audit stage is expected to write:
 ```text
 runs/real-data-pilot-v0.1/manifest_audit.json
 runs/real-data-pilot-v0.1/metadata_profile.json
+runs/real-data-pilot-v0.1/reconciliation_report.json
 runs/real-data-pilot-v0.1/sample_audit.json
 ```
 
