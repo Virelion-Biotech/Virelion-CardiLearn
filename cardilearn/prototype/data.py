@@ -3,9 +3,14 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from torch.utils.data import Dataset
 
 from cardilearn.leakage import assert_no_leakage
+
+try:  # Torch is optional for metadata/preprocessing-only workflows.
+    from torch.utils.data import Dataset
+except ImportError:  # pragma: no cover - exercised indirectly in non-Torch CI.
+    class Dataset:  # type: ignore[no-redef]
+        pass
 
 
 class CardiLearnCellDataset(Dataset):
