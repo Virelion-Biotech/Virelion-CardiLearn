@@ -2,8 +2,8 @@
 
 This module converts canonical candidate sample metadata into an explicit audit.
 It never silently invents subject IDs, conditions, timepoints, or replicate groups.
-A three-study pilot is intentionally insufficient for a final study-held-out
-benchmark, so the planner emits a candidate plan rather than a fake locked split.
+Study-family identities are also enforced so linked GEO series cannot masquerade
+as independent held-out studies.
 """
 from __future__ import annotations
 
@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from typing import Any
 
 import pandas as pd
+
+from .study_families import annotate_study_families
 
 
 REQUIRED_COLUMNS = (
@@ -81,24 +83,44 @@ def candidate_split_plan(
     frame: pd.DataFrame,
     *,
     minimum_studies: int = 6,
+    minimum_families: int | None = None,
 ) -> dict[str, Any]:
-    """Return a split candidate plan; never claims a lock from too little data."""
-    studies = sorted(frame["study_id"].dropna().unique().tolist())
-    eligible = len(studies) >= minimum_studies
+    """Return a split candidate plan using independent study families.
+
+    ``study_id`` remains the reporting unit, but ``study_family_id`` is the
+    independence unit for held-out-study claims. Linked accessions are kept in
+    the same future partition. Unmapped accessions are conservatively treated
+    as their own family until related-series review identifies a linkage.
+    """
+    family_frame = annotate_study_families(frame)
+    studies = sorted(family_frame["study_id"].dropna().unique().tolist())
+    families = sorted(family_frame["study_family_id"].dropna().unique().tolist())
+    required_families = minimum_studies if minimum_families is None else minimum_families
+    eligible = len(families) >= required_families
+
+    family_members = {
+        family: sorted(
+            family_frame.loc[
+                family_frame["study_family_id"].eq(family), "study_id"
+            ].dropna().unique().tolist()
+        )
+        for family in families
+    }
 
     plan: dict[str, Any] = {
         "status": "candidate_only",
         "study_count": len(studies),
+        "independent_family_count": len(families),
         "minimum_studies_for_lock": minimum_studies,
+        "minimum_independent_families_for_lock": required_families,
         "studies": studies,
+        "study_families": family_members,
         "locked": False,
-        "reason": "at least six independent studies are required before creating a useful multi-study train/validation/test split",
+        "reason": "at least six independent study families are required before creating a useful multi-study train/validation/test split",
     }
 
     if eligible:
-        # The actual split assignment remains a separate deterministic step so
-        # it can incorporate task balance and CardiBench policy.
         plan["status"] = "ready_for_split_assignment"
-        plan["reason"] = "sufficient study count; task-specific stratification and subject integrity must be applied before lock"
+        plan["reason"] = "sufficient independent study families; task-specific stratification and subject integrity must be applied before lock"
 
     return plan
