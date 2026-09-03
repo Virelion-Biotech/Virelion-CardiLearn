@@ -83,8 +83,16 @@ def test_frozen_manifest_round_trip_and_tamper_detection():
 def test_manifest_hash_tamper_detection():
     frame = clean_frame()
     manifest = freeze_split_manifest(frame)
-    manifest["records"][0]["split"] = "test"
+    manifest["sha256"] = "0" * 64
     with pytest.raises(LeakageError, match="hash"):
+        verify_frozen_split_manifest(frame, manifest)
+
+
+def test_manifest_record_tamper_is_detected_before_hash_check():
+    frame = clean_frame()
+    manifest = freeze_split_manifest(frame)
+    manifest["records"][0]["split"] = "test"
+    with pytest.raises(LeakageError, match="differ from frozen manifest"):
         verify_frozen_split_manifest(frame, manifest)
 
 
