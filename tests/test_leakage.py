@@ -30,6 +30,11 @@ def test_clean_hierarchy_has_no_findings():
     assert_no_leakage(clean_frame())
 
 
+def test_repeated_sample_id_within_partition_is_allowed_for_cells():
+    frame = pd.concat([clean_frame(), clean_frame().iloc[[0]]], ignore_index=True)
+    assert audit_hierarchy(frame) == []
+
+
 def test_subject_cross_split_is_blocking():
     frame = clean_frame()
     frame.loc[len(frame)] = {
@@ -94,7 +99,6 @@ def test_exact_cross_split_feature_collisions_are_adversarial_not_within_split()
 
 
 def test_feature_selection_uses_training_rows_only():
-    # Gene 0 has the largest variance only because of non-training observations.
     X = np.array([
         [0.0, 1.0, 0.0],
         [0.1, 1.1, 0.0],
