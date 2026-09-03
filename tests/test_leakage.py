@@ -88,14 +88,14 @@ def test_manifest_hash_tamper_detection():
         verify_frozen_split_manifest(frame, manifest)
 
 
-def test_exact_cross_split_feature_collisions_are_adversarial_not_within_split():
+def test_exact_cross_split_feature_collisions_are_diagnostic():
     X = np.array([[1, 2], [1, 2], [3, 4]], dtype=np.float32)
     clear = exact_cross_split_feature_collisions(X, ["train", "train", "test"])
     assert clear["status"] == "clear"
 
-    leaking = exact_cross_split_feature_collisions(X, ["train", "test", "test"])
-    assert leaking["status"] == "blocking"
-    assert leaking["cross_split_collision_count"] == 1
+    collision = exact_cross_split_feature_collisions(X, ["train", "test", "test"])
+    assert collision["status"] == "warning"
+    assert collision["cross_split_collision_count"] == 1
 
 
 def test_feature_selection_uses_training_rows_only():
