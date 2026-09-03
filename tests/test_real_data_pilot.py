@@ -14,6 +14,7 @@ from cardilearn.real_data import (
     load_manifest,
     parse_geo_family_soft,
 )
+from cardilearn.study_families import annotate_study_families, accession_to_family
 
 
 def test_real_pilot_manifest_loads_and_has_expanded_candidate_set():
@@ -101,3 +102,17 @@ def test_canonicalization_only_controls_known_condition_terms():
     assert canonical.loc[0, "condition_status"] == "controlled"
     assert canonical.loc[1, "condition"] == ""
     assert canonical.loc[1, "condition_status"] == "unresolved"
+
+
+def test_linked_geo_series_share_one_study_family():
+    mapping = accession_to_family()
+    assert mapping["GSE130699"] == mapping["GSE153480"]
+
+    frame = pd.DataFrame([
+        {"study_id": "mouse_a", "accession": "GSE130699"},
+        {"study_id": "mouse_b", "accession": "GSE153480"},
+        {"study_id": "pig_a", "accession": "GSE185289"},
+    ])
+    annotated = annotate_study_families(frame)
+    assert annotated.loc[0, "study_family_id"] == annotated.loc[1, "study_family_id"]
+    assert annotated.loc[2, "study_family_id"] != annotated.loc[0, "study_family_id"]
