@@ -47,8 +47,9 @@ def audit_hierarchy(
 ) -> list[LeakageFinding]:
     """Return findings for IDs appearing in multiple partitions or missing IDs.
 
-    The audit is conservative: missing biological identifiers are reported as
-    blocking findings rather than repaired from sample names or expression.
+    Repeated sample IDs are expected in cell/nucleus-level tables. The relevant
+    invariant is that one sample must belong to only one partition, not that its
+    identifier may occur only once.
     """
     required = set(REQUIRED_FOR_AUDIT)
     required.add(split_column)
@@ -83,16 +84,6 @@ def audit_hierarchy(
                     tuple(leaked[:20]),
                 )
             )
-
-    duplicate_samples = int(frame["sample_id"].duplicated().sum())
-    if duplicate_samples:
-        findings.append(
-            LeakageFinding(
-                "blocking",
-                "DUPLICATE_SAMPLE_ID",
-                f"{duplicate_samples} duplicate sample_id rows were found",
-            )
-        )
 
     splits = set(frame[split_column].dropna().astype(str))
     expected = {"train", "validation", "test"}
