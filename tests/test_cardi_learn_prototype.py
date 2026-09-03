@@ -44,8 +44,10 @@ def test_hierarchical_split_has_no_leakage():
 
 def test_gene_selection_uses_training_only():
     x = np.zeros((10, 4), dtype=np.float32)
+    # Training set: genes 0 and 2 are the two highest-variance features.
+    # Test-only gene 3 has huge variance but must not influence selection.
     x[:5, 0] = np.arange(5)
-    x[:5, 1] = 1
+    x[:5, 2] = np.arange(5) * 0.5
     x[5:, 3] = np.arange(5) * 100
     metadata = pd.DataFrame(
         {
@@ -56,7 +58,7 @@ def test_gene_selection_uses_training_only():
         }
     )
     selected = select_genes_train_only(x, metadata, 2)
-    assert 3 not in selected
+    assert selected.tolist() == [0, 2]
 
 
 def test_model_forward_and_two_views():
