@@ -40,21 +40,22 @@ class CardiLearnCellDataset(Dataset):
 
 
 def select_genes_train_only(X: np.ndarray, metadata: pd.DataFrame, n_genes: int) -> np.ndarray:
-    """Return gene indices using training observations only.
+    """Select features from training observations only after identity checks.
 
-    This function refuses to select features from a hierarchy that already has
-    partition leakage. Test/validation observations never enter the variance
-    calculation. The caller is expected to freeze both the split and selected
-    indices as part of the benchmark record.
+    The feature-selection stage may be invoked on a train-only subset, so all
+    three partitions are not required here. Existing hierarchy leakage still
+    blocks selection, and validation/test values never enter the variance fit.
     """
     if "_split" not in metadata:
         raise ValueError("metadata must contain '_split'")
     if X.ndim != 2 or X.shape[0] != len(metadata):
         raise ValueError("X and metadata have incompatible shapes")
 
-    # Protect against the common failure mode where feature selection is run
-    # after an accidental subject/sample split leak has already occurred.
-    assert_no_leakage(metadata, split_column="_split")
+    assert_no_leakage(
+        metadata,
+        split_column="_split",
+        require_all_partitions=False,
+    )
 
     train = metadata["_split"].eq("train").to_numpy()
     if not train.any():
