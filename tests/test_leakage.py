@@ -12,6 +12,7 @@ from cardilearn.leakage import (
     freeze_split_manifest,
     verify_frozen_split_manifest,
 )
+from cardilearn.prototype.data import select_genes_train_only
 
 
 def clean_frame() -> pd.DataFrame:
@@ -32,11 +33,7 @@ def test_clean_hierarchy_has_no_findings():
 def test_subject_cross_split_is_blocking():
     frame = clean_frame()
     frame.loc[len(frame)] = {
-        "study_family_id": "fam_x",
-        "study_id": "GSE4",
-        "subject_id": "A1",
-        "sample_id": "A1s2",
-        "_split": "test",
+        "study_family_id": "fam_x", "study_id": "GSE4", "subject_id": "A1", "sample_id": "A1s2", "_split": "test",
     }
     findings = audit_hierarchy(frame)
     assert any(f.code == "SUBJECT_ID_CROSS_SPLIT" for f in findings)
@@ -47,11 +44,7 @@ def test_subject_cross_split_is_blocking():
 def test_study_family_cross_split_is_blocking():
     frame = clean_frame()
     frame.loc[len(frame)] = {
-        "study_family_id": "fam_a",
-        "study_id": "GSE9",
-        "subject_id": "A2",
-        "sample_id": "A2s",
-        "_split": "test",
+        "study_family_id": "fam_a", "study_id": "GSE9", "subject_id": "A2", "sample_id": "A2s", "_split": "test",
     }
     findings = audit_hierarchy(frame)
     assert any(f.code == "STUDY_FAMILY_ID_CROSS_SPLIT" for f in findings)
@@ -98,3 +91,34 @@ def test_exact_cross_split_feature_collisions_are_adversarial_not_within_split()
     leaking = exact_cross_split_feature_collisions(X, ["train", "test", "test"])
     assert leaking["status"] == "blocking"
     assert leaking["cross_split_collision_count"] == 1
+
+
+def test_feature_selection_uses_training_rows_only():
+    # Gene 0 has the largest variance only because of non-training observations.
+    X = np.array([
+        [0.0, 1.0, 0.0],
+        [0.1, 1.1, 0.0],
+        [0.2, 1.2, 0.0],
+        [100.0, 0.0, 0.0],
+        [-100.0, 0.0, 0.0],
+    ], dtype=np.float32)
+    meta = pd.DataFrame([
+        {"study_id": "S1", "subject_id": "A", "sample_id": "A1", "_split": "train"},
+        {"study_id": "S1", "subject_id": "B", "sample_id": "B1", "_split": "train"},
+        {"study_id": "S2", "subject_id": "C", "sample_id": "C1", "_split": "train"},
+        {"study_id": "S3", "subject_id": "D", "sample_id": "D1", "_split": "validation"},
+        {"study_id": "S4", "subject_id": "E", "sample_id": "E1", "_split": "test"},
+    ])
+    selected = select_genes_train_only(X, meta, n_genes=1)
+    assert selected.tolist() == [1]
+
+
+def test_feature_selection_refuses_hierarchy_leak():
+    X = np.eye(3, dtype=np.float32)
+    meta = pd.DataFrame([
+        {"study_id": "S1", "subject_id": "A", "sample_id": "A1", "_split": "train"},
+        {"study_id": "S2", "subject_id": "A", "sample_id": "A2", "_split": "test"},
+        {"study_id": "S3", "subject_id": "C", "sample_id": "C1", "_split": "validation"},
+    ])
+    with pytest.raises(LeakageError):
+        select_genes_train_only(X, meta, n_genes=1)
