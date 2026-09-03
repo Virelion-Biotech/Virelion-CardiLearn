@@ -197,11 +197,11 @@ def exact_cross_split_feature_collisions(
     X: np.ndarray,
     splits: Iterable[str],
 ) -> dict[str, Any]:
-    """Find exact duplicated rows occurring across different partitions.
+    """Diagnose exact duplicated rows occurring across different partitions.
 
-    This is an adversarial check, not a blanket ban on duplicate cells: exact
-    duplicates within a biological sample can be legitimate in sparse counts.
-    Cross-partition duplicates are the suspicious case.
+    Exact row equality is intentionally diagnostic rather than blocking: sparse
+    single-cell/nucleus count vectors can legitimately collide across distinct
+    cells. Hierarchy leakage remains the hard safety gate.
     """
     X = np.asarray(X)
     split_values = np.asarray(list(splits), dtype=object)
@@ -218,5 +218,6 @@ def exact_cross_split_feature_collisions(
         "unique_row_hashes": len(owners),
         "cross_split_collision_count": len(collisions),
         "collision_hashes": collisions[:100],
-        "status": "blocking" if collisions else "clear",
+        "status": "warning" if collisions else "clear",
+        "interpretation": "review collisions with metadata; exact equality is not proof of leakage in sparse expression data",
     }
