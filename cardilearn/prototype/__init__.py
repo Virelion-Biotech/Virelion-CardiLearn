@@ -1,11 +1,14 @@
 """CardiLearn v0.1 research prototype.
 
-This package contains the new cardiac state representation model described in
-`docs/CARDILEARN_MODEL_V0_1.md`. It is intentionally separate from the older
-benchmark orchestration code so the model can evolve without changing the
-CardiAtlas/CardiBench contracts.
+Torch-backed model components are imported lazily so metadata, leakage, and
+other non-training utilities remain usable without installing Torch.
 """
 
-from .model import CardiLearnProto
-
 __all__ = ["CardiLearnProto"]
+
+
+def __getattr__(name: str):
+    if name == "CardiLearnProto":
+        from .model import CardiLearnProto
+        return CardiLearnProto
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
