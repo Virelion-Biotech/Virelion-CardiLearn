@@ -16,7 +16,6 @@ import json
 import re
 import urllib.request
 from pathlib import Path
-from typing import Iterable
 
 USER_AGENT = "Virelion-CardiLearn/0.3 metadata acquisition"
 
@@ -39,7 +38,11 @@ def sha256_bytes(data: bytes) -> str:
 
 def parse_soft_samples(payload: bytes) -> list[dict[str, str]]:
     """Extract GEO sample-level fields from a SOFT family file."""
-    text = gzip.decompress(payload).decode("utf-8", errors="replace") if payload[:2] == b"\x1f\x8b" else payload.decode("utf-8", errors="replace")
+    if payload[:2] == b"\x1f\x8b":
+        text = gzip.decompress(payload).decode("utf-8", errors="replace")
+    else:
+        text = payload.decode("utf-8", errors="replace")
+
     rows: list[dict[str, str]] = []
     current: dict[str, str] | None = None
     characteristics: list[str] = []
@@ -79,7 +82,10 @@ def fetch_geo(accession: str, output_dir: Path) -> dict:
         raise ValueError(f"Invalid GEO series accession: {accession}")
     number = int(series_number.group(1))
     low = (number // 1000) * 1000
-    soft_url = f"https://ftp.ncbi.nlm.nih.gov/geo/series/GSE{low}nnn/{accession}/soft/{accession}_family.soft.gz"
+    soft_url = (
+        f"https://ftp.ncbi.nlm.nih.gov/geo/series/GSE{low}nnn/"
+        f"{accession}/soft/{accession}_family.soft.gz"
+    )
     payload = fetch_bytes(soft_url)
     samples = parse_soft_samples(payload)
     raw_path = output_dir / f"{accession}_family.soft.gz"
@@ -90,7 +96,13 @@ def fetch_geo(accession: str, output_dir: Path) -> dict:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(samples)
-    return {"kind": "geo", "accession": accession, "url": soft_url, "sample_count": len(samples), "sha256": sha256_bytes(payload)}
+    return {
+        "kind": "geo",
+        "accession": accession,
+        "url": soft_url,
+        "sample_count": len(samples),
+        "sha256": sha256_bytes(payload),
+    }
 
 
 def fetch_sra(accession: str, output_dir: Path) -> dict:
@@ -100,13 +112,24 @@ def fetch_sra(accession: str, output_dir: Path) -> dict:
     csv_path = output_dir / f"{accession}_runinfo.csv"
     csv_path.write_text(text, encoding="utf-8")
     rows = list(csv.DictReader(io.StringIO(text)))
-    return {"kind": "sra", "accession": accession, "url": url, "run_count": len(rows), "sha256": sha256_bytes(payload)}
+    return {
+        "kind": "sra",
+        "accession": accession,
+        "url": url,
+        "run_count": len(rows),
+        "sha256": sha256_bytes(payload),
+    }
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, default=Path("data/ncbi_metadata"))
-    parser.add_argument("--source", action="append", choices=sorted(SOURCES), help="Fetch only selected source(s).")
+    parser.add_argument(
+        "--source",
+        action="append",
+        choices=sorted(SOURCES),
+        help="Fetch only selected source(s).",
+    )
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     selected = args.source or list(SOURCES)
@@ -120,7 +143,10 @@ def main() -> None:
         record["source_id"] = source_id
         manifest["sources"].append(record)
         print(json.dumps(record, sort_keys=True))
-    (args.output / "acquisition_manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    (args.output / "acquisition_manifest.json").write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
 
 if __name__ == "__main__":
