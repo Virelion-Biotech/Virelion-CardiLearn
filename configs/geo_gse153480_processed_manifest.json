@@ -1,0 +1,155 @@
+{
+  "schema_version": "1.0",
+  "accession": "GSE153480",
+  "purpose": "Pilot acquisition manifest for the processed single-cell RNA-seq matrices from the NCBI GEO GSE153480 series.",
+  "source": "NCBI GEO",
+  "processed_data_only": true,
+  "raw_sra_downloaded": false,
+  "files": [
+    {
+      "accession": "GSM4644949",
+      "url": "https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM4644nnn/GSM4644949/suppl/GSM4644949_P1_1MI_barcodes.tsv.gz",
+      "relative_path": "GSM4644949/barcodes.tsv.gz",
+      "sha256": ""
+    },
+    {
+      "accession": "GSM4644949",
+      "url": "https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM4644nnn/GSM4644949/suppl/GSM4644949_P1_1MI_genes.tsv.gz",
+      "relative_path": "GSM4644949/genes.tsv.gz",
+      "sha256": ""
+    },
+    {
+      "accession": "GSM4644949",
+      "url": "https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM4644nnn/GSM4644949/suppl/GSM4644949_P1_1MI_matrix.mtx.gz",
+      "relative_path": "GSM4644949/matrix.mtx.gz",
+      "sha256": ""
+    },
+    {
+      "accession": "GSM4644950",
+      "url": "https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM4644nnn/GSM4644950/suppl/GSM4644950_P1_1Sham_barcodes.tsv.gz",
+      "relative_path": "GSM4644950/barcodes.tsv.gz",
+      "sha256": ""
+    },
+    {
+      "accession": "GSM4644950",
+      "url": "https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM4644nnn/GSM4644950/suppl/GSM4644950_P1_1Sham_genes.tsv.gz",
+      "relative_path": "GSM4644950/genes.tsv.gz",
+      "sha256": ""
+    },
+    {
+      "accession": "GSM4644950",
+      "url": "https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM4644nnn/GSM4644950/suppl/GSM4644950_P1_1Sham_matrix.mtx.gz",
+      "relative_path": "GSM4644950/matrix.mtx.gz",
+      "sha256": ""
+    },
+    {
+      "accession": "GSM4644951",
+      "url": "https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM4644nnn/GSM4644951/suppl/GSM4644951_P1_3MI_barcodes.tsv.gz",
+      "relative_path": "GSM4644951/barcodes.tsv.gz",
+      "sha256": ""
+    },
+    {
+      "accession": "GSM4644951",
+      "url": "https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM4644nnn/GSM4644951/suppl/GSM4644951_P1_3MI_genes.tsv.gz",
+      "relative_path": "GSM4644951/genes.tsv.gz",
+      "sha256": ""
+    },
+    {
+      "accession": "GSM4644951",
+      "url": "https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM4644nnn/GSM4644951/suppl/GSM4644951_P1_3MI_matrix.mtx.gz",
+      "relative_path": "GSM4644951/matrix.mtx.gz",
+      "sha256": ""
+    },
+    {
+      "accession": "GSM4644952",
+      "url": "https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM4644nnn/GSM4644952/suppl/GSM4644952_P1_3Sham_barcodes.tsv.gz",
+      "relative_path": "GSM4644952/barcodes.tsv.gz",
+      "sha256": ""
+    },
+    {
+      "accession": "GSM4644952",
+      "url": "https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM4644nnn/GSM4644952/suppl/GSM4644952_P1_3Sham_genes.tsv.gz",
+      "relative_path": "GSM4644952/genes.tsv.gz",
+      "sha256": ""
+    },
+    {
+      "accession": "GSM4644952",
+      "url": "https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM4644nnn/GSM4644952/suppl/GSM4644952_P1_3Sham_matrix.mtx.gz",
+      "relative_path": "GSM4644952/matrix.mtx.gz",
+      "sha256": ""
+    },
+    {
+      "accession": "GSM4644953",
+      "url": "https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM4644nnn/GSM4644953/suppl/GSM4644953_P8_1MI_barcodes.tsv.gz",
+      "relative_path": "GSM4644953/barcodes.tsv.gz",
+      "sha256": ""
+    },
+    {
+      "accession": "GSM4644953",
+      "url": "https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM4644nnn/GSM4644953/suppl/GSM4644953_P8_1MI_genes.tsv.gz",
+      "relative_path": "GSM4644953/genes.tsv.gz",
+      "sha256": ""
+    },
+    {
+      "accession": "GSM4644953",
+      "url": "https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM4644nnn/GSM4644953/suppl/GSM4644953_P8_1MI_matrix.mtx.gz",
+      "relative_path": "GSM4644953/matrix.mtx.gz",
+      "sha256": ""
+    },
+    {
+      "accession": "GSM4644954",
+      "url": "https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM4644nnn/GSM4644954/suppl/GSM4644954_P8_1Sham_barcodes.tsv.gz",
+      "relative_path": "GSM4644954/barcodes.tsv.gz",
+      "sha256": ""
+    },
+    {
+      "accession": "GSM4644954",
+      "url": "https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM4644nnn/GSM4644954/suppl/GSM4644954_P8_1Sham_genes.tsv.gz",
+      "relative_path": "GSM4644954/genes.tsv.gz",
+      "sha256": ""
+    },
+    {
+      "accession": "GSM4644954",
+      "url": "https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM4644nnn/GSM4644954/suppl/GSM4644954_P8_1Sham_matrix.mtx.gz",
+      "relative_path": "GSM4644954/matrix.mtx.gz",
+      "sha256": ""
+    },
+    {
+      "accession": "GSM4644955",
+      "url": "https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM4644nnn/GSM4644955/suppl/GSM4644955_P8_3MI_barcodes.tsv.gz",
+      "relative_path": "GSM4644955/barcodes.tsv.gz",
+      "sha256": ""
+    },
+    {
+      "accession": "GSM4644955",
+      "url": "https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM4644nnn/GSM4644955/suppl/GSM4644955_P8_3MI_genes.tsv.gz",
+      "relative_path": "GSM4644955/genes.tsv.gz",
+      "sha256": ""
+    },
+    {
+      "accession": "GSM4644955",
+      "url": "https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM4644nnn/GSM4644955/suppl/GSM4644955_P8_3MI_matrix.mtx.gz",
+      "relative_path": "GSM4644955/matrix.mtx.gz",
+      "sha256": ""
+    },
+    {
+      "accession": "GSM4644956",
+      "url": "https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM4644nnn/GSM4644956/suppl/GSM4644956_P8_3Sham_barcodes.tsv.gz",
+      "relative_path": "GSM4644956/barcodes.tsv.gz",
+      "sha256": ""
+    },
+    {
+      "accession": "GSM4644956",
+      "url": "https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM4644nnn/GSM4644956/suppl/GSM4644956_P8_3Sham_genes.tsv.gz",
+      "relative_path": "GSM4644956/genes.tsv.gz",
+      "sha256": ""
+    },
+    {
+      "accession": "GSM4644956",
+      "url": "https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM4644nnn/GSM4644956/suppl/GSM4644956_P8_3Sham_matrix.mtx.gz",
+      "relative_path": "GSM4644956/matrix.mtx.gz",
+      "sha256": ""
+    }
+  ],
+  "notes": "The series has eight processed 10x single-cell samples. This manifest intentionally acquires processed MEX files only; it does not infer subject IDs, cell-type labels, or study-family relationships. Those must be reconciled from authoritative metadata before the data can enter the locked cohort."
+}
