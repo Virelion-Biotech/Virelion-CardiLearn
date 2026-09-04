@@ -20,7 +20,8 @@ jobs:
         run: >-
           ruff check cardilearn/prototype cardilearn/interpretability cardilearn/perturbation
           cardilearn/benchmark_protocol.py cardilearn/leakage.py cardilearn/cross_species.py
-          scripts/run_prototype.py tests/test_cardi_learn_prototype.py tests/test_interpretability.py
+          scripts/run_prototype.py scripts/train_real_data.py scripts/fetch_ncbi_metadata.py
+          tests/test_cardi_learn_prototype.py tests/test_interpretability.py
           tests/test_perturbation.py tests/test_benchmark_protocol.py tests/test_leakage.py
           tests/test_cross_species.py --select E9,F
       - name: Run prototype tests
