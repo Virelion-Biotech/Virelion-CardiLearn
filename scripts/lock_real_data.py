@@ -2,8 +2,8 @@
 
 The command is intentionally strict. It refuses to lock candidate metadata, unresolved
 biology, duplicate observation IDs, hierarchy conflicts, or mismatched expression /
-metadata identities. A scientifically reviewed split manifest must be supplied;
-this script never invents a convenient split from sorted IDs.
+metadata identities. A scientifically reviewed split manifest and approved study-family
+registry must be supplied; this script never invents a convenient split.
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ import pandas as pd
 
 from cardilearn.ingestion import SparseExpression, validate_metadata
 from cardilearn.reproducibility import dataframe_fingerprint, fingerprint_ids
-from cardilearn.study_families import annotate_study_families
+from cardilearn.study_families import annotate_study_families, load_study_family_registry
 
 
 def _matrix_fingerprint(expression: SparseExpression) -> str:
@@ -68,8 +68,13 @@ def build_lock(
     metadata: pd.DataFrame,
     expression: SparseExpression,
     split: dict[str, object],
+    *,
+    registry_path: str | Path = "configs/study_family_registry_v0_1.json",
 ) -> dict[str, object]:
     """Validate biological readiness and return an immutable lock payload."""
+    registry = load_study_family_registry(registry_path)
+    if registry.get("status") != "approved":
+        raise ValueError("study-family registry must be explicitly approved before data lock")
     validate_metadata(metadata)
     if "observation_id" not in metadata.columns:
         raise ValueError("metadata must contain observation_id matching expression rows")
@@ -87,7 +92,7 @@ def build_lock(
     if (mapping > 1).any():
         raise ValueError("a sample maps to multiple subjects")
 
-    family_frame = annotate_study_families(metadata)
+    family_frame = annotate_study_families(metadata, registry_path=registry_path)
     families = set(family_frame["study_family_id"].astype(str).unique())
     if len(families) < 6:
         raise ValueError("at least six independent study families are required for the locked multi-study protocol")
@@ -118,6 +123,7 @@ def build_lock(
             "train_only_preprocessing_required": True,
             "test_locked": True,
             "split_reviewed_externally": True,
+            "study_family_registry_approved": True,
         },
     }
 
@@ -127,12 +133,13 @@ def main() -> int:
     parser.add_argument("--expression", required=True)
     parser.add_argument("--metadata", required=True)
     parser.add_argument("--split", required=True, help="Reviewed JSON split manifest")
+    parser.add_argument("--registry", default="configs/study_family_registry_v0_1.json")
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
     expression = load_npz_expression(args.expression)
     metadata = pd.read_parquet(args.metadata)
     split = json.loads(Path(args.split).read_text(encoding="utf-8"))
-    lock = build_lock(metadata, expression, split)
+    lock = build_lock(metadata, expression, split, registry_path=args.registry)
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(lock, indent=2, sort_keys=True) + "\n", encoding="utf-8")
