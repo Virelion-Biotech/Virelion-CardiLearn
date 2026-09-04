@@ -1,4 +1,4 @@
-schema_version: "1.0"
+schema_version: "1.1"
 registry_status: candidate_sources_not_locked
 purpose: >-
   Candidate public cardiac single-cell/single-nucleus datasets for Step 19.
@@ -12,10 +12,10 @@ sources:
     species: Sus scrofa
     assay: snRNA-seq
     biological_scope: cardiac_regeneration_and_maturation
-    primary_reference: https://pubmed.ncbi.nlm.nih.gov/35666813/
-    geo_record: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE185289
     status: candidate
     intended_role: regenerative_mammalian_anchor
+    primary_reference: https://pubmed.ncbi.nlm.nih.gov/35666813/
+    geo_record: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE185289
     notes:
       - Contains fetal, control, apical-resection, MI, and combined AR+MI groups.
       - 56 GEO samples are listed on the series record.
@@ -26,10 +26,10 @@ sources:
     species: Danio rerio
     assay: scRNA-seq_and_stereo-seq
     biological_scope: cardiac_regeneration_time_course
-    primary_reference: https://pubmed.ncbi.nlm.nih.gov/40253397/
-    ncbi_record: https://www.ncbi.nlm.nih.gov/bioproject/PRJNA1233465
     status: candidate
     intended_role: regenerative_non_mammalian_anchor
+    primary_reference: https://pubmed.ncbi.nlm.nih.gov/40253397/
+    ncbi_record: https://www.ncbi.nlm.nih.gov/bioproject/PRJNA1233465
     notes:
       - Eight regenerative time points are represented.
       - The project contains 396 SRA experiments and is substantially larger than the initial training prototype.
@@ -40,23 +40,129 @@ sources:
     species: Homo sapiens
     assay: CITE-seq
     biological_scope: human_mi_and_cardiac_fibrosis
-    primary_reference: https://pubmed.ncbi.nlm.nih.gov/35948637/
-    geo_record: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE217494
     status: candidate
     intended_role: human_external_anchor
+    primary_reference: https://pubmed.ncbi.nlm.nih.gov/35948637/
+    geo_record: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE217494
     notes:
       - Includes healthy donors, acute MI, chronic ischemic cardiomyopathy, and non-ischemic cardiomyopathy.
       - 22 explanted human hearts are described in the GEO series design.
       - Protein/CITE features are not part of the expression matrix unless a multimodal branch is explicitly added.
 
+  - source_id: wang_neonatal_regeneration_2020
+    accession: GSE153480
+    bioproject: PRJNA642814
+    species: Mus musculus
+    assay: scRNA-seq
+    biological_scope: neonatal_mi_regeneration
+    status: candidate
+    intended_role: regenerative_mouse_anchor
+    primary_reference: https://pubmed.ncbi.nlm.nih.gov/33296652/
+    geo_record: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE153480
+    study_family_id: wang_olson_neonatal_regeneration
+    notes:
+      - P1 and P8 MI/sham samples with 1-day and 3-day post-surgery measurements.
+      - Explicitly linked in the study-family registry to related Wang/Olson series until sample overlap is resolved.
+
+  - source_id: sayers_conduction_regeneration_2024
+    accession: GSE245872
+    species: Mus musculus
+    assay: scRNA-seq
+    biological_scope: neonatal_vs_nonregenerative_conduction_system_after_mi
+    status: candidate
+    intended_role: cardiac_state_external_anchor
+    primary_reference: https://pubmed.ncbi.nlm.nih.gov/39753976/
+    geo_record: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE245872
+    notes:
+      - Focuses on cardiac conduction-system regeneration versus pathological remodeling after MI.
+      - Cell-state labels must be reconciled conservatively; this is not a generic whole-heart training source by default.
+
+  - source_id: cardiac_reprogramming_2022
+    accession: GSE185265
+    species: Mus musculus
+    assay: scRNA-seq
+    biological_scope: cardiac_reprogramming_after_chronic_mi
+    status: candidate
+    intended_role: reprogramming_external_anchor
+    primary_reference: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE185265
+    geo_record: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE185265
+    notes:
+      - Direct in-vivo cardiac reprogramming after chronic MI.
+      - Perturbation/reprogramming states must not be conflated with spontaneous regeneration states.
+
+  - source_id: actin_remodeling_regeneration_2023
+    accession: GSE246250
+    species: Mus musculus
+    assay: snRNA-seq
+    biological_scope: neonatal_mi_cardiomyocyte_regeneration
+    status: candidate
+    intended_role: cardiomyocyte_state_anchor
+    primary_reference: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE246250
+    geo_record: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE246250
+    notes:
+      - PCM1-positive cardiomyocyte nuclei profiled after neonatal MI.
+      - Restricted cardiomyocyte sampling requires explicit scope handling before combining with whole-heart studies.
+
+  - source_id: zebrafish_regenerating_cm_tf_2026
+    accession: GSE280871
+    species: Danio rerio
+    assay: scRNA-seq
+    biological_scope: regenerating_cardiomyocyte_transcription_factors
+    status: candidate
+    intended_role: regenerative_zebrafish_external_anchor
+    primary_reference: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE280871
+    geo_record: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE280871
+    notes:
+      - Regenerating zebrafish cardiomyocyte-focused scRNA-seq.
+      - Must be checked for sample independence relative to other zebrafish regeneration series before split assignment.
+
+  - source_id: human_fetal_heart_development_2019
+    accession: GSE106118
+    species: Homo sapiens
+    assay: scRNA-seq
+    biological_scope: human_cardiac_development
+    status: candidate
+    intended_role: human_developmental_anchor
+    primary_reference: https://pubmed.ncbi.nlm.nih.gov/30759401/
+    geo_record: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE106118
+    notes:
+      - Human embryonic/fetal cardiac single-cell developmental atlas.
+      - Developmental maturation is the primary signal; injury labels are not expected and it should not be forced into an injury task.
+
+  - source_id: human_heart_maturation_2021
+    accession: GSE156703
+    species: Homo sapiens
+    assay: snRNA-seq
+    biological_scope: human_postnatal_heart_maturation
+    status: candidate
+    intended_role: human_maturation_anchor
+    primary_reference: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE156703
+    geo_record: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE156703
+    notes:
+      - Human heart maturation across developmental stages through adulthood.
+      - Must be reconciled separately from injury/regeneration datasets and may serve as a maturation-only external evaluation source.
+
+  - source_id: mouse_cardiac_development_2023
+    accession: GSE230531
+    species: Mus musculus
+    assay: scRNA-seq
+    biological_scope: murine_cardiac_development
+    status: candidate
+    intended_role: developmental_maturation_anchor
+    primary_reference: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE230531
+    geo_record: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE230531
+    notes:
+      - Large developmental cardiac single-cell dataset spanning multiple developmental stages.
+      - Use for developmental representation evaluation unless its sampling structure proves appropriate for training.
+
 selection_rules:
-  minimum_independent_studies_for_split: 3
+  minimum_independent_studies_for_split: 6
   split_unit: study_id
   biological_independence_unit: study_family_id
   minimum_species_for_cross_species_claim: 2
   require_resolved_cell_type: true
   require_resolved_maturation_label: true
-  require_resolved_injury_label: true
+  require_resolved_injury_label: false
   require_gene_identifier_mapping: true
   require_train_only_preprocessing: true
   prohibit_raw_data_commit: true
@@ -65,11 +171,13 @@ selection_rules:
 lock_requirements:
   - source accessions verified against the primary database record
   - sample-to-subject-to-study hierarchy reconciled
-  - study-family relationships recorded
+  - study-family relationships recorded and independently reviewed
   - cell/nucleus-level rows linked to biological sample IDs
-  - condition, injury, timepoint, tissue, and assay semantics normalized
+  - condition, injury, timepoint, tissue, and assay semantics normalized where applicable
   - gene identifiers and species orthology policy frozen
   - train/validation/test studies frozen and fingerprinted
   - expression and metadata fingerprints recorded
   - all unresolved labels removed or explicitly excluded
   - candidate source retained as candidate if any requirement fails
+  - developmental-only datasets are not forced to carry injury labels
+  - multimodal measurements are not silently merged into RNA expression
