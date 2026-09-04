@@ -1,8 +1,9 @@
 """Train the CardiLearn prototype on an explicitly curated real-data matrix.
 
-This runner is deliberately strict: it refuses unresolved metadata, missing
-biological targets, non-finite expression, insufficient independent studies,
-or unfrozen preprocessing. Raw expression data are never written to Git.
+The runner refuses unresolved metadata, missing biological targets, non-finite
+expression, or insufficient independent studies. Splitting and feature
+selection happen before fitting, and only the training partition is passed to
+the optimizer. Raw expression data are never written to Git.
 """
 from __future__ import annotations
 
@@ -81,8 +82,6 @@ def main() -> int:
     if len(metadata) != X.shape[0]:
         raise ValueError("expression rows must match metadata rows")
 
-    # Study-level split is the default scientific unit. No feature-selection
-    # statistic is computed from validation/test observations.
     splits = study_split(metadata, seed=args.seed, group_column="study_id")
     metadata = assign_split(metadata, splits, group_column="study_id")
     assert_no_hierarchy_leakage(metadata)
@@ -102,8 +101,13 @@ def main() -> int:
     if train_mask.sum() < 2:
         raise ValueError("training split contains fewer than two observations")
 
-    dataset = CardiLearnCellDataset(X, encoded)
+    # Critical leakage boundary: validation/test rows are retained only for
+    # provenance. They never enter the optimizer or train-time preprocessing.
+    train_metadata = encoded.loc[train_mask].reset_index(drop=True)
+    train_X = X[train_mask]
+    dataset = CardiLearnCellDataset(train_X, train_metadata)
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
+
     from cardilearn.prototype.model import CardiLearnProto
     from cardilearn.prototype.train import TrainConfig, seed_torch, train_one_epoch
 
@@ -127,12 +131,12 @@ def main() -> int:
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
     torch.save(model.state_dict(), out / "model.pt")
-    metadata.to_parquet(out / "split_metadata.parquet", index=False)
+    encoded.to_parquet(out / "split_metadata.parquet", index=False)
     (out / "training_history.json").write_text(json.dumps(history, indent=2), encoding="utf-8")
     manifest = {
         "status": "trained_real_data",
         "expression_fingerprint": dataframe_fingerprint(pd.DataFrame(X)),
-        "metadata_fingerprint": dataframe_fingerprint(metadata),
+        "metadata_fingerprint": dataframe_fingerprint(encoded),
         "split_fingerprint": fingerprint_ids([f"{k}:{v}" for k, values in splits.items() if k != "group_column" for v in values]),
         "selected_genes": genes,
         "species_codes": species_codes,
@@ -143,11 +147,12 @@ def main() -> int:
         "device": str(device),
         "epochs": args.epochs,
         "n_observations": int(X.shape[0]),
+        "n_training_observations": int(train_mask.sum()),
         "n_genes": int(X.shape[1]),
         "scientific_note": "Training completion is not evidence of biological validity; locked held-out evaluation is required.",
     }
     (out / "training_manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
-    print(json.dumps({"output": str(out), "device": str(device), "n_observations": len(dataset), "n_genes": X.shape[1]}, indent=2))
+    print(json.dumps({"output": str(out), "device": str(device), "n_observations": len(X), "n_training_observations": int(train_mask.sum()), "n_genes": X.shape[1]}, indent=2))
     return 0
 
 
