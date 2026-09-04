@@ -21,6 +21,8 @@ jobs:
       - name: Install
         run: python -m pip install -e '.[dev]'
       - name: Test
-        run: pytest -q
+        env:
+          PYTHONPATH: .
+        run: python -m pytest -q
       # Repository-wide Ruff cleanup is tracked separately from the test gate.
       # The CardiLearn prototype has its own strict lint/test/smoke workflow.
