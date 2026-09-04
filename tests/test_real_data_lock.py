@@ -5,7 +5,7 @@ import json
 import pandas as pd
 import pytest
 
-from scripts.lock_real_data import _validate_split, _load_review
+from scripts.lock_real_data import _load_review, _validate_split
 
 
 def test_split_must_cover_families_exactly_once():
@@ -34,8 +34,26 @@ def test_review_requires_reviewer_and_timestamp(tmp_path):
         _load_review(path)
 
 
-def test_sample_manifest_has_one_row_per_sample():
+def test_sample_manifest_rejects_duplicate_sample_rows(tmp_path):
     from scripts.assemble_10x_cohort import load_manifest
 
-    path = tmp_path = None
-    assert pd is not None
+    row = {
+        "accession": "GSE1",
+        "study_id": "study1",
+        "subject_id": "subject1",
+        "sample_id": "sample1",
+        "species": "Mus musculus",
+        "assay": "scRNA-seq",
+        "cell_type": "cardiomyocyte",
+        "maturation": "neonatal",
+        "injury": "MI",
+        "condition": "injured",
+        "condition_status": "controlled",
+        "subject_confidence": "verified",
+        "matrix_dir": "/tmp/matrix1",
+    }
+    frame = pd.DataFrame([row, row])
+    path = tmp_path / "manifest.csv"
+    frame.to_csv(path, index=False)
+    with pytest.raises(ValueError, match="sample_id must occur once"):
+        load_manifest(path)
