@@ -1,0 +1,75 @@
+schema_version: "1.0"
+registry_status: candidate_sources_not_locked
+purpose: >-
+  Candidate public cardiac single-cell/single-nucleus datasets for Step 19.
+  No dataset becomes a training source until identity, metadata, orthology,
+  modality, and independence checks pass.
+
+sources:
+  - source_id: nakada_pig_2022
+    accession: GSE185289
+    bioproject: PRJNA768464
+    species: Sus scrofa
+    assay: snRNA-seq
+    biological_scope: cardiac_regeneration_and_maturation
+    primary_reference: https://pubmed.ncbi.nlm.nih.gov/35666813/
+    geo_record: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE185289
+    status: candidate
+    intended_role: regenerative_mammalian_anchor
+    notes:
+      - Contains fetal, control, apical-resection, MI, and combined AR+MI groups.
+      - 56 GEO samples are listed on the series record.
+      - Processed cardiomyocyte data are supplied as a Seurat R object; raw data are also available.
+
+  - source_id: gao_zebrafish_2025
+    accession: PRJNA1233465
+    species: Danio rerio
+    assay: scRNA-seq_and_stereo-seq
+    biological_scope: cardiac_regeneration_time_course
+    primary_reference: https://pubmed.ncbi.nlm.nih.gov/40253397/
+    ncbi_record: https://www.ncbi.nlm.nih.gov/bioproject/PRJNA1233465
+    status: candidate
+    intended_role: regenerative_non_mammalian_anchor
+    notes:
+      - Eight regenerative time points are represented.
+      - The project contains 396 SRA experiments and is substantially larger than the initial training prototype.
+      - Use scRNA-seq for the primary cell-state matrix; treat Stereo-seq as a separate modality until explicitly modeled.
+
+  - source_id: kuppe_human_mi_2022
+    accession: GSE217494
+    species: Homo sapiens
+    assay: CITE-seq
+    biological_scope: human_mi_and_cardiac_fibrosis
+    primary_reference: https://pubmed.ncbi.nlm.nih.gov/35948637/
+    geo_record: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE217494
+    status: candidate
+    intended_role: human_external_anchor
+    notes:
+      - Includes healthy donors, acute MI, chronic ischemic cardiomyopathy, and non-ischemic cardiomyopathy.
+      - 22 explanted human hearts are described in the GEO series design.
+      - Protein/CITE features are not part of the expression matrix unless a multimodal branch is explicitly added.
+
+selection_rules:
+  minimum_independent_studies_for_split: 3
+  split_unit: study_id
+  biological_independence_unit: study_family_id
+  minimum_species_for_cross_species_claim: 2
+  require_resolved_cell_type: true
+  require_resolved_maturation_label: true
+  require_resolved_injury_label: true
+  require_gene_identifier_mapping: true
+  require_train_only_preprocessing: true
+  prohibit_raw_data_commit: true
+  prohibit_cell_level_random_split: true
+
+lock_requirements:
+  - source accessions verified against the primary database record
+  - sample-to-subject-to-study hierarchy reconciled
+  - study-family relationships recorded
+  - cell/nucleus-level rows linked to biological sample IDs
+  - condition, injury, timepoint, tissue, and assay semantics normalized
+  - gene identifiers and species orthology policy frozen
+  - train/validation/test studies frozen and fingerprinted
+  - expression and metadata fingerprints recorded
+  - all unresolved labels removed or explicitly excluded
+  - candidate source retained as candidate if any requirement fails
