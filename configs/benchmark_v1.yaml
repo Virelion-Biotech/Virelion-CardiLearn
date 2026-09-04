@@ -1,0 +1,31 @@
+benchmark:
+  id: cardilearn_core_v1
+  task: classification
+  primary_metric: auroc
+  primary_direction: maximize
+  models:
+    - pca_linear
+    - mlp
+    - autoencoder
+    - cardilearn
+  seeds: [13, 42, 73, 101, 131]
+  selection_split: validation
+  report_split: test
+  require_locked_test: true
+  require_grouped_split: true
+
+protocol:
+  primary_comparison: cardilearn_vs_each_baseline
+  model_selection: validation_only
+  final_reporting: locked_test_only
+  report_mean_sd: true
+  paired_seed_test: wilcoxon
+  confidence_intervals: bootstrap_optional_after_data_lock
+  claims_allowed:
+    - held_out_predictive_performance
+    - robustness_across_seeds
+    - relative_performance_to_declared_baselines
+  claims_forbidden_without_additional_evidence:
+    - causal_superiority
+    - clinical_utility
+    - regenerative_efficacy
