@@ -16,6 +16,7 @@ def _frame(n_studies: int = 3) -> pd.DataFrame:
             rows.append(
                 {
                     "study_id": f"ST{study}",
+                    "accession": f"GSE{10000 + study}",
                     "sample_id": f"ST{study}_S{sample}",
                     "subject_id": f"ST{study}_SUB{sample}",
                     "condition": "reference" if sample == 0 else "myocardial_injury",
