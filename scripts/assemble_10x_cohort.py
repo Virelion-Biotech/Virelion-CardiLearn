@@ -49,20 +49,34 @@ def load_manifest(path: str | Path) -> pd.DataFrame:
     return frame
 
 
+def _align_to_genes(matrix: sparse.csr_matrix, genes: tuple[str, ...], target: tuple[str, ...]) -> sparse.csr_matrix:
+    """Reindex a sparse matrix to an explicit target gene universe without densifying."""
+    if len(set(genes)) != len(genes):
+        raise ValueError("input matrix contains duplicate gene IDs")
+    positions = {gene: index for index, gene in enumerate(genes)}
+    columns = [positions.get(gene) for gene in target]
+    present_target = [(target_index, source_index) for target_index, source_index in enumerate(columns) if source_index is not None]
+    if not present_target:
+        raise ValueError("sample has no overlap with the target gene universe")
+    target_indices = np.fromiter((pair[0] for pair in present_target), dtype=np.int64)
+    source_indices = np.fromiter((pair[1] for pair in present_target), dtype=np.int64)
+    selected = matrix[:, source_indices].tocoo()
+    selected.col = target_indices[selected.col]
+    return selected.tocsr()
+
+
 def assemble(frame: pd.DataFrame) -> tuple[sparse.csr_matrix, pd.DataFrame, tuple[str, ...]]:
     matrices: list[sparse.csr_matrix] = []
     observations: list[pd.DataFrame] = []
-    common_genes: list[str] | None = None
+    target_genes: tuple[str, ...] | None = None
 
     for row in frame.itertuples(index=False):
         expression = read_10x_mtx(row.matrix_dir)
-        genes = list(expression.gene_ids)
-        if common_genes is None:
-            common_genes = genes
-        elif genes != common_genes:
-            raise ValueError(
-                f"gene ordering/identity mismatch for {row.sample_id}; explicit gene reconciliation is required"
-            )
+        if target_genes is None:
+            target_genes = expression.gene_ids
+            aligned = expression.X
+        else:
+            aligned = _align_to_genes(expression.X, expression.gene_ids, target_genes)
         prefix = f"{row.study_id}::{row.sample_id}::"
         cell_ids = [prefix + cell for cell in expression.observation_ids]
         metadata = pd.DataFrame(
@@ -83,16 +97,16 @@ def assemble(frame: pd.DataFrame) -> tuple[sparse.csr_matrix, pd.DataFrame, tupl
                 "source_observation_id": expression.observation_ids,
             }
         )
-        matrices.append(expression.X)
+        matrices.append(aligned)
         observations.append(metadata)
 
-    if common_genes is None:
+    if target_genes is None:
         raise ValueError("no expression matrices were assembled")
     combined = sparse.vstack(matrices, format="csr", dtype=np.float32)
     metadata = pd.concat(observations, ignore_index=True)
     if metadata["observation_id"].duplicated().any():
         raise ValueError("assembled observation IDs are not unique")
-    return combined, metadata, tuple(common_genes)
+    return combined, metadata, target_genes
 
 
 def save_csr_npz(path: str | Path, matrix: sparse.csr_matrix, observation_ids: tuple[str, ...], genes: tuple[str, ...]) -> None:
