@@ -45,25 +45,32 @@ def build_supervised_baseline(
     hidden_layer_sizes: tuple[int, ...] = (128, 64),
     random_state: int = 42,
 ) -> Any:
-    """Build an explicitly declared baseline for downstream probing.
-
-    This function deliberately contains no CardiLearn training logic. The CardiLearn
-    model is supplied through the same probe interface by the experiment runner.
-    """
+    """Build an explicitly declared baseline for downstream probing."""
     _check_task(task)
     if name == "pca_linear":
-        estimator = LogisticRegression(max_iter=2000, random_state=random_state) if task == "classification" else Ridge(alpha=1.0)
-        return Pipeline([
-            ("scale", StandardScaler()),
-            ("pca", PCA(n_components=n_components, random_state=random_state)),
-            ("probe", estimator),
-        ])
+        estimator = (
+            LogisticRegression(max_iter=2000, random_state=random_state)
+            if task == "classification"
+            else Ridge(alpha=1.0)
+        )
+        return Pipeline(
+            [
+                ("scale", StandardScaler()),
+                ("pca", PCA(n_components=n_components, random_state=random_state)),
+                ("probe", estimator),
+            ]
+        )
     if name == "mlp":
         if task == "classification":
             from sklearn.neural_network import MLPClassifier
-            estimator = MLPClassifier(hidden_layer_sizes=hidden_layer_sizes, max_iter=300, random_state=random_state)
+
+            estimator = MLPClassifier(
+                hidden_layer_sizes=hidden_layer_sizes, max_iter=300, random_state=random_state
+            )
         else:
-            estimator = MLPRegressor(hidden_layer_sizes=hidden_layer_sizes, max_iter=300, random_state=random_state)
+            estimator = MLPRegressor(
+                hidden_layer_sizes=hidden_layer_sizes, max_iter=300, random_state=random_state
+            )
         return Pipeline([("scale", StandardScaler()), ("probe", estimator)])
     raise KeyError(f"unsupported sklearn baseline: {name}")
 
@@ -75,10 +82,10 @@ def fit_autoencoder(
     hidden_layer_sizes: tuple[int, ...] = (128,),
     random_state: int = 42,
 ) -> tuple[Pipeline, Callable[[np.ndarray], np.ndarray]]:
-    """Fit a plain MLP autoencoder and return its encoder transform.
+    """Fit a plain MLP autoencoder and return its hidden latent transform.
 
-    The regressor is trained only on x_train; callers must fit it inside the
-    training partition to preserve the benchmark's leakage boundary.
+    The estimator is trained only on ``x_train``. The returned encoder manually
+    evaluates the fitted hidden layers, avoiding leakage from held-out matrices.
     """
     x_train = np.asarray(x_train, dtype=float)
     if x_train.ndim != 2:
@@ -86,20 +93,42 @@ def fit_autoencoder(
     if latent_dim < 1 or latent_dim >= x_train.shape[1]:
         raise ValueError("latent_dim must be positive and smaller than n_features")
     architecture = tuple(hidden_layer_sizes) + (latent_dim,)
-    model = Pipeline([
-        ("scale", StandardScaler()),
-        ("ae", MLPRegressor(hidden_layer_sizes=architecture, max_iter=500, random_state=random_state)),
-    ])
+    model = Pipeline(
+        [
+            ("scale", StandardScaler()),
+            (
+                "ae",
+                MLPRegressor(
+                    hidden_layer_sizes=architecture, max_iter=500, random_state=random_state
+                ),
+            ),
+        ]
+    )
     model.fit(x_train, x_train)
 
     def encode(values: np.ndarray) -> np.ndarray:
         values = np.asarray(values, dtype=float)
-        hidden = model.named_steps["ae"].predict(values)
-        return hidden[:, :latent_dim]
+        if values.ndim != 2 or values.shape[1] != x_train.shape[1]:
+            raise ValueError("values must have shape [n_samples, n_features]")
+        hidden = model.named_steps["scale"].transform(values)
+        estimator = model.named_steps["ae"]
+        for weights, bias in zip(estimator.coefs_[:-1], estimator.intercepts_[:-1]):
+            hidden = hidden @ weights + bias
+            if estimator.activation == "identity":
+                pass
+            elif estimator.activation == "relu":
+                hidden = np.maximum(hidden, 0.0)
+            elif estimator.activation == "tanh":
+                hidden = np.tanh(hidden)
+            elif estimator.activation == "logistic":
+                hidden = 1.0 / (1.0 + np.exp(-np.clip(hidden, -50, 50)))
+            else:
+                raise ValueError(f"unsupported MLP activation: {estimator.activation}")
+        return hidden
 
     return model, encode
 
 
 def benchmark_manifest() -> list[dict[str, str]]:
-    """Serializable model manifest used by experiment bookkeeping."""
+    """Serializable model manifest used for experiment bookkeeping."""
     return [spec.__dict__.copy() for spec in BASELINES]
