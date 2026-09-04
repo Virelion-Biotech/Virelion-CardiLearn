@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0",
+  "approved": false,
+  "reviewer": "",
+  "reviewed_at_utc": "",
+  "method": "study_family_level_split; preserve biological independence and reserve held-out families",
+  "assignments": {
+    "train": [],
+    "validation": [],
+    "test": []
+  },
+  "notes": "Template only. Do not set approved=true until accession relationships, subject/sample hierarchy, species balance, and task coverage have been independently reviewed."
+}
