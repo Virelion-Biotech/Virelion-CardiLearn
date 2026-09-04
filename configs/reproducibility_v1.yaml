@@ -1,0 +1,48 @@
+schema_version: "1.0"
+
+experiment:
+  name: cardilearn_real_data_v1
+  task: classification
+  model: cardilearn
+  description: "Template for a locked, reproducible CardiLearn experiment"
+
+data:
+  source: /path/to/dataset
+  fingerprint: "0000000000000000000000000000000000000000000000000000000000000000"
+  biological_unit: subject
+  cell_level_repeats_allowed: true
+
+splits:
+  manifest: /path/to/frozen_split_manifest.json
+  group_column: subject_id
+  policy: grouped
+  selection_split: validation
+  report_split: test
+  locked_test: true
+
+preprocessing:
+  fit_on: train_only
+  normalization: train_fitted
+  feature_selection: train_only
+  dimensionality_reduction: train_only
+  imputation: train_only
+
+reproducibility:
+  seeds: [13, 42, 73, 101, 131]
+  primary_seed: 42
+  deterministic_algorithms: true
+  record_git_commit: true
+  record_environment: true
+  record_dataset_fingerprint: true
+  record_split_fingerprint: true
+
+outputs:
+  manifest: artifacts/reproducibility/experiment_manifest.json
+  metrics: artifacts/results/metrics.json
+  predictions: artifacts/results/predictions.parquet
+
+scientific_guardrails:
+  no_test_set_model_selection: true
+  no_random_cell_split_for_repeated_biological_units: true
+  no_unreported_manual_preprocessing: true
+  empirical_claims_require_real_data: true
