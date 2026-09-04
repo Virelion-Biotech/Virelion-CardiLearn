@@ -54,8 +54,11 @@ def _align_to_genes(matrix: sparse.csr_matrix, genes: tuple[str, ...], target: t
     if len(set(genes)) != len(genes):
         raise ValueError("input matrix contains duplicate gene IDs")
     positions = {gene: index for index, gene in enumerate(genes)}
-    columns = [positions.get(gene) for gene in target]
-    present_target = [(target_index, source_index) for target_index, source_index in enumerate(columns) if source_index is not None]
+    present_target = [
+        (target_index, positions[gene])
+        for target_index, gene in enumerate(target)
+        if gene in positions
+    ]
     if not present_target:
         raise ValueError("sample has no overlap with the target gene universe")
     target_indices = np.fromiter((pair[0] for pair in present_target), dtype=np.int64)
@@ -65,18 +68,24 @@ def _align_to_genes(matrix: sparse.csr_matrix, genes: tuple[str, ...], target: t
     return selected.tocsr()
 
 
+def _deterministic_gene_universe(frame: pd.DataFrame) -> tuple[str, ...]:
+    genes: set[str] = set()
+    for row in frame.itertuples(index=False):
+        expression = read_10x_mtx(row.matrix_dir)
+        genes.update(expression.gene_ids)
+    if not genes:
+        raise ValueError("no gene identifiers were found")
+    return tuple(sorted(genes))
+
+
 def assemble(frame: pd.DataFrame) -> tuple[sparse.csr_matrix, pd.DataFrame, tuple[str, ...]]:
     matrices: list[sparse.csr_matrix] = []
     observations: list[pd.DataFrame] = []
-    target_genes: tuple[str, ...] | None = None
+    target_genes = _deterministic_gene_universe(frame)
 
     for row in frame.itertuples(index=False):
         expression = read_10x_mtx(row.matrix_dir)
-        if target_genes is None:
-            target_genes = expression.gene_ids
-            aligned = expression.X
-        else:
-            aligned = _align_to_genes(expression.X, expression.gene_ids, target_genes)
+        aligned = _align_to_genes(expression.X, expression.gene_ids, target_genes)
         prefix = f"{row.study_id}::{row.sample_id}::"
         cell_ids = [prefix + cell for cell in expression.observation_ids]
         metadata = pd.DataFrame(
@@ -100,8 +109,6 @@ def assemble(frame: pd.DataFrame) -> tuple[sparse.csr_matrix, pd.DataFrame, tupl
         matrices.append(aligned)
         observations.append(metadata)
 
-    if target_genes is None:
-        raise ValueError("no expression matrices were assembled")
     combined = sparse.vstack(matrices, format="csr", dtype=np.float32)
     metadata = pd.concat(observations, ignore_index=True)
     if metadata["observation_id"].duplicated().any():
