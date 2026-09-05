@@ -1,0 +1,172 @@
+schema_version: "1.0"
+status: candidate_review_required
+purpose: >-
+  Evidence-aware cohort eligibility matrix for Step 19. This file records
+  dataset role and blocking conditions; it does not approve any dataset for
+  training and does not infer biological independence from GEO sample counts.
+
+criteria:
+  hard_requirements:
+    - verified study accession
+    - reconciled study_family_id
+    - verified subject/sample hierarchy
+    - canonical assay and tissue semantics
+    - resolved cell-type labels for intended task
+    - explicit gene identifier policy
+    - train-only preprocessing
+    - no cross-partition biological-unit leakage
+  soft_requirements:
+    - balanced task coverage
+    - sufficient biological replicates
+    - cross-species utility
+    - compatible feature availability
+
+cohorts:
+  - source_id: wang_neonatal_regeneration_2020
+    accession: GSE153480
+    species: Mus musculus
+    assay: scRNA-seq
+    role: primary_regenerative_mouse_candidate
+    eligibility: conditional
+    strengths:
+      - neonatal MI and sham design
+      - P1 and P8 regenerative contrast
+      - 1-day and 3-day post-surgery states
+      - processed 10x-compatible MTX/TSV data
+    blockers:
+      - biological subject identity must be verified beyond GEO sample accession
+      - study-family overlap with related Wang/Olson series must be resolved
+      - sample-level QC and cell-level QC must be computed from acquired matrices
+    exclusion_rules:
+      - exclude scATAC companion series from RNA matrix
+      - do not infer animal identity from filenames alone
+
+  - source_id: nakada_pig_2022
+    accession: GSE185289
+    species: Sus scrofa
+    assay: snRNA-seq
+    role: primary_regenerative_mammalian_external_candidate
+    eligibility: conditional
+    strengths:
+      - regenerative and non-regenerative injury groups
+      - fetal and postnatal maturation states
+      - independent mammalian species
+      - extensive processed/metadata resources
+    blockers:
+      - animal-level hierarchy and replicate structure require explicit reconciliation
+      - processed Seurat object must be inspected before committing to a scalable ingestion route
+      - pig-to-canonical-gene mapping must be frozen before cross-species integration
+    exclusion_rules:
+      - do not count 56 GEO samples as 56 independent animals without verification
+
+  - source_id: kuppe_human_mi_2022
+    accession: GSE217494
+    species: Homo sapiens
+    assay: CITE-seq
+    role: human_external_evaluation_candidate
+    eligibility: conditional
+    strengths:
+      - 22 explanted human hearts across healthy, acute MI, chronic ischemic and non-ischemic disease
+      - explicit donor-level biological design
+      - strong human external-evaluation value
+    blockers:
+      - GEX/ADT relationships require explicit sample-to-donor reconciliation
+      - ADT features must remain outside the RNA branch
+      - cell-type and tissue-region harmonization required
+    exclusion_rules:
+      - never merge protein features into RNA expression silently
+
+  - source_id: gao_zebrafish_2025
+    accession: PRJNA1233465
+    species: Danio rerio
+    assay: scRNA-seq_and_stereo-seq
+    role: cross_species_external_candidate
+    eligibility: conditional
+    blockers:
+      - scRNA and Stereo-seq must remain separate modalities
+      - large project requires scalable metadata and matrix acquisition
+      - zebrafish orthology mapping must be explicitly frozen
+      - independence relative to other zebrafish datasets must be reviewed
+
+  - source_id: sayers_conduction_regeneration_2024
+    accession: GSE245872
+    species: Mus musculus
+    assay: scRNA-seq
+    role: specialized_external_evaluation
+    eligibility: conditional
+    blockers:
+      - conduction-system scope limits generic whole-heart comparability
+      - cell-state labels must be source-verified
+    exclusion_rules:
+      - do not treat as generic whole-heart training by default
+
+  - source_id: cardiac_reprogramming_2022
+    accession: GSE185265
+    species: Mus musculus
+    assay: scRNA-seq
+    role: reprogramming_external_evaluation
+    eligibility: conditional
+    blockers:
+      - reprogramming states are mechanistically distinct from spontaneous regeneration
+      - perturbation identity and timepoint semantics must be preserved
+    exclusion_rules:
+      - do not label reprogramming as regeneration
+
+  - source_id: actin_remodeling_regeneration_2023
+    accession: GSE246250
+    species: Mus musculus
+    assay: snRNA-seq
+    role: cardiomyocyte_specific_external_evaluation
+    eligibility: conditional
+    blockers:
+      - restricted cardiomyocyte sampling creates scope mismatch with whole-heart datasets
+      - nuclear assay semantics require explicit handling
+
+  - source_id: zebrafish_regenerating_cm_tf_2026
+    accession: GSE280871
+    species: Danio rerio
+    assay: scRNA-seq
+    role: zebrafish_external_evaluation
+    eligibility: conditional
+    blockers:
+      - independence relative to other zebrafish regeneration studies
+      - cardiomyocyte-focused scope and label reconciliation
+
+  - source_id: human_fetal_heart_development_2019
+    accession: GSE106118
+    species: Homo sapiens
+    assay: scRNA-seq
+    role: developmental_external_evaluation
+    eligibility: conditional
+    blockers:
+      - developmental-only signal should be modeled as maturation/development, not injury
+      - donor/developmental-stage hierarchy must be verified
+
+  - source_id: human_heart_maturation_2021
+    accession: GSE156703
+    species: Homo sapiens
+    assay: snRNA-seq
+    role: maturation_external_evaluation
+    eligibility: conditional
+    blockers:
+      - maturation-stage and biological-donor structure require reconciliation
+      - nuclear-vs-cell assay compatibility must be explicit
+
+  - source_id: mouse_cardiac_development_2023
+    accession: GSE230531
+    species: Mus musculus
+    assay: scRNA-seq
+    role: developmental_maturation_external_candidate
+    eligibility: conditional
+    blockers:
+      - developmental sampling structure must be evaluated before training use
+      - should primarily support maturation/development validation unless independence is sufficient for training
+
+training_policy:
+  current_training_sources: []
+  current_external_sources: []
+  approval_state: none
+  rationale: >-
+    No cohort is approved until subject/sample hierarchy, study-family
+    independence, modality semantics, gene mapping, and matrix-level QC are
+    demonstrated. The first operational acquisition target is GSE153480.
