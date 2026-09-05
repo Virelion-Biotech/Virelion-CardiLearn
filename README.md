@@ -1,10 +1,34 @@
 # Virelion CardiLearn
 
-**A research-grade cardiac state representation model with explicit biological validation boundaries.**
+**A reproducible research prototype for cardiac molecular-state representation learning.**
 
-CardiLearn is the learning layer of the Virelion cardiac ML ecosystem. The repository contains a structured transcriptomic representation prototype plus reproducible data, validation, interpretation, perturbation, and benchmarking infrastructure.
+CardiLearn is the learning layer of the Virelion cardiac ML ecosystem. This repository contains a deliberately small reference architecture for transcriptomic representation learning, together with reproducible data, validation, interpretation, perturbation, and benchmarking infrastructure.
 
-> **Scientific status:** CardiLearn is an executable research prototype, not a validated cardiac foundation model, clinical system, or evidence of regenerative efficacy. Real-data scientific claims must be demonstrated on locked held-out benchmarks and, where appropriate, independent biological validation.
+> **Scientific status:** CardiLearn is an executable research prototype, not a validated cardiac foundation model, clinical system, or evidence of regenerative efficacy. The current neural architecture is intentionally CPU-friendly (2,000 input genes, 64-dimensional gene tokens, 16 learned program queries). Its purpose is to validate the data contracts, leakage controls, objectives, evaluation protocol, and end-to-end research workflow before scaling model capacity. Real-data scientific claims must be demonstrated on locked held-out benchmarks and, where appropriate, independent biological validation.
+
+## Scope: prototype first, claims later
+
+The project intentionally separates **software maturity** from **scientific maturity**. A sophisticated validation framework does not make a small prototype biologically validated. CardiLearn therefore uses the following order:
+
+```text
+software correctness
+   ↓
+data / metadata audit
+   ↓
+locked real-data cohort
+   ↓
+training
+   ↓
+locked benchmark
+   ↓
+unseen-study / species validation
+   ↓
+interpretation
+   ↓
+independent biological validation
+```
+
+Until the real-data lock and experiments are executed, the repository should be read as **research infrastructure plus a model prototype**, not as a completed biological result.
 
 ## Research model
 
@@ -19,13 +43,15 @@ expression
    → reconstruction
 ```
 
-The prototype is intentionally small enough for CPU/12-GB-RAM development experiments:
+The current reference architecture is intentionally small:
 
 - 2,000 input genes
 - 64-dimensional gene tokens
 - 16 learned molecular program queries
 - 128-dimensional shared latent
 - 32-dimensional private latent
+
+These dimensions are **prototype settings, not claims of biological sufficiency**. Scaling the architecture is a later experimental variable and must earn its complexity through held-out evidence.
 
 Implementation: `cardilearn/prototype/`.
 
@@ -52,6 +78,8 @@ The initial learning objectives include molecular reconstruction, technical-view
 ## Data hierarchy and leakage controls
 
 ```text
+study family
+  ↓
 study
   ↓
 subject / donor / animal
@@ -68,17 +96,10 @@ Cells are observations, not automatically independent biological replicates. Rel
 The metadata-first pilot currently includes complementary candidate studies:
 
 - **GSE185289** — pig single-nucleus data spanning fetal/postnatal, injury, and regenerative/non-regenerative contexts.
-- **GSE130699** — neonatal mouse cardiomyocyte single-nucleus data spanning P1/P8 MI and sham conditions.
-- **GSE217494** — human CITE-seq/GEX data spanning healthy and cardiomyopathy/MI contexts.
+- **GSE153480** — neonatal mouse single-cell data spanning P1/P8 MI and sham conditions.
+- **GSE217494** — human CITE-seq/GEX data spanning healthy and ischemic cardiomyopathy/MI contexts.
 
-These are **candidate studies, not a locked benchmark**. Subject/sample relationships, technical replicates, conditions, regions, and timepoints must be reconciled before a scientific data lock.
-
-Audit/materialize metadata:
-
-```bash
-python scripts/audit_real_data_pilot.py
-python scripts/materialize_real_data_pilot.py
-```
+These are **candidate studies, not a locked benchmark**. Subject/sample relationships, technical replicates, conditions, regions, timepoints, assay boundaries, and study-family independence must be reconciled before a scientific data lock.
 
 Expression matrices are not committed to Git.
 
@@ -130,16 +151,16 @@ Optional dependencies are separated in `pyproject.toml`; PyTorch is not required
 
 ```text
 cardilearn/
-├── prototype/            # CardiLearn representation-learning prototype
+├── prototype/            # small reference representation-learning model
 ├── interpretability/     # Step 13
 ├── perturbation/         # Step 14
 ├── benchmark_protocol.py # Step 15 evaluation contract
 ├── benchmark_suite.py    # Step 15 baseline implementations
-├── real_data.py          # Real-data pilot contracts/parser
-├── data.py               # Dataset contracts
-├── splitting.py          # Leakage-safe splitting
-├── validation.py         # Dataset integrity checks
-├── provenance.py         # Run/data provenance
+├── real_data.py          # real-data contracts/parser
+├── data.py               # dataset contracts
+├── splitting.py          # leakage-safe splitting
+├── validation.py         # dataset integrity checks
+├── provenance.py         # run/data provenance
 └── ...
 
 docs/
@@ -148,7 +169,13 @@ scripts/
 tests/
 ```
 
+## Naming convention
+
+**Cardi-** is the Virelion software/platform family prefix (for example, CardiLearn, CardiBench, CardiEval, CardiAtlas, CardiSim, CardiTrace, and CardiBridge). Functional measurement or modality tools may retain descriptive names such as **ElectroTrace**, **MyoTrace**, and **OptiCell**. This distinction is intentional: `Cardi-` identifies the software family, while modality names identify what is being measured.
+
 ## Scientific maturity gate
+
+The maturity gate is a governance protocol, not evidence that the model has already passed it. Each stage requires actual evidence before the next claim is made:
 
 ```text
 software tests
@@ -181,6 +208,10 @@ A passing CI build demonstrates software correctness, not biological validity. N
 - **CardiSim** — synthetic cardiac trajectory simulation
 - **CardiTrace** — provenance and reproducibility
 - **CardiBridge** — cross-component schemas and APIs
+
+## Current priority
+
+The next meaningful milestone is **not another architectural feature**. It is the first complete real-data result: a reviewed cohort, frozen split, train-only preprocessing, reproducible training run, locked benchmark against the required baselines, and held-out evaluation. Until that exists, model capacity and additional ecosystem surface area remain secondary.
 
 ## License
 
