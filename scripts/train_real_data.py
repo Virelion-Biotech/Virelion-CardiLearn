@@ -1,9 +1,13 @@
-"""Train the CardiLearn prototype on an explicitly curated real-data matrix.
+"""Train CardiLearn on an explicitly curated real-data matrix.
 
 The runner refuses unresolved metadata, missing biological targets, non-finite
 expression, or insufficient independent studies. Splitting and feature
 selection happen before fitting, and only the training partition is passed to
 the optimizer. Raw expression data are never written to Git.
+
+The default research configuration targets CardiLearnLarge. The smaller
+CardiLearnProto remains available with ``--model-size proto`` for software
+smoke tests and CPU development.
 """
 from __future__ import annotations
 
@@ -52,9 +56,6 @@ def _require_metadata(metadata: pd.DataFrame) -> None:
     if metadata[["study_id", "subject_id", "sample_id"]].isna().any().any():
         raise ValueError("study_id, subject_id, and sample_id cannot be missing")
 
-    # Cell-level matrices legitimately contain many cells from one biological
-    # sample. Repeated sample_id values are therefore allowed, but a sample,
-    # subject, and study must have a single unambiguous identity mapping.
     for child, parent in (("sample_id", "subject_id"), ("subject_id", "study_id")):
         mapping_counts = metadata.groupby(child)[parent].nunique(dropna=False)
         if (mapping_counts > 1).any():
@@ -85,10 +86,11 @@ def main() -> int:
     parser.add_argument("--expression", required=True, help="training-ready expression matrix")
     parser.add_argument("--metadata", required=True, help="training-ready sample/cell metadata")
     parser.add_argument("--output", default="runs/real-data-v1")
-    parser.add_argument("--n-genes", type=int, default=2000)
+    parser.add_argument("--n-genes", type=int, default=20000)
+    parser.add_argument("--model-size", choices=("large", "proto"), default="large")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--epochs", type=int, default=10)
-    parser.add_argument("--batch-size", type=int, default=32)
+    parser.add_argument("--batch-size", type=int, default=8)
     args = parser.parse_args()
 
     try:
@@ -118,8 +120,6 @@ def main() -> int:
     encoded = metadata.copy()
     for column, mapping in (("species", species_codes), ("assay", assay_codes), ("cell_type", cell_codes)):
         encoded[column] = encoded[column].astype(str).map(mapping)
-    # The prototype optimizer only sees training rows. Unseen validation/test
-    # categories are intentionally not assigned a fabricated training code.
     train_metadata = encoded.loc[train_mask].reset_index(drop=True)
     train_X = X[train_mask]
     if train_metadata[["species", "assay", "cell_type"]].isna().any().any():
@@ -128,17 +128,26 @@ def main() -> int:
     dataset = CardiLearnCellDataset(train_X, train_metadata)
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
 
-    from cardilearn.prototype.model import CardiLearnProto
+    from cardilearn.prototype.model import CardiLearnLarge, CardiLearnProto
     from cardilearn.prototype.train import TrainConfig, seed_torch, train_one_epoch
 
     seed_torch(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = CardiLearnProto(
-        n_genes=X.shape[1],
-        n_species=len(species_codes),
-        n_assays=len(assay_codes),
-        n_cell_types=len(cell_codes),
-    ).to(device)
+    if args.model_size == "large":
+        model = CardiLearnLarge(
+            n_genes=X.shape[1],
+            n_species=len(species_codes),
+            n_assays=len(assay_codes),
+            n_cell_types=len(cell_codes),
+        ).to(device)
+    else:
+        model = CardiLearnProto(
+            n_genes=X.shape[1],
+            n_species=len(species_codes),
+            n_assays=len(assay_codes),
+            n_cell_types=len(cell_codes),
+        ).to(device)
+
     config = TrainConfig(epochs=args.epochs, batch_size=args.batch_size, seed=args.seed)
     optimizer = torch.optim.AdamW(model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay)
 
@@ -155,6 +164,8 @@ def main() -> int:
     (out / "training_history.json").write_text(json.dumps(history, indent=2), encoding="utf-8")
     manifest = {
         "status": "trained_real_data",
+        "model_size": args.model_size,
+        "architecture": "CardiLearnLarge" if args.model_size == "large" else "CardiLearnProto",
         "expression_fingerprint": dataframe_fingerprint(pd.DataFrame(X_raw)),
         "selected_expression_fingerprint": dataframe_fingerprint(pd.DataFrame(X)),
         "metadata_fingerprint": dataframe_fingerprint(encoded),
@@ -173,7 +184,7 @@ def main() -> int:
         "scientific_note": "Training completion is not evidence of biological validity; locked held-out evaluation is required.",
     }
     (out / "training_manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
-    print(json.dumps({"output": str(out), "device": str(device), "n_observations": len(X), "n_training_observations": int(train_mask.sum()), "n_genes": X.shape[1]}, indent=2))
+    print(json.dumps({"output": str(out), "model_size": args.model_size, "device": str(device), "n_observations": len(X), "n_training_observations": int(train_mask.sum()), "n_genes": X.shape[1]}, indent=2))
     return 0
 
 
