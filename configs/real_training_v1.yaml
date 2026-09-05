@@ -1,16 +1,18 @@
-schema_version: "1.0"
+schema_version: "1.1"
 
 experiment:
-  name: cardilearn_real_training_v1
-  task: representation_learning
+  name: cardilearn_real_training_v2
+  task: cardiac_state_representation_learning
   model: cardilearn_large
   model_scale: transcriptome_scale
+  biological_scope: development_maturation_injury_regeneration
 
 input:
   expression: /path/to/training_ready_expression.npz
   metadata: /path/to/training_ready_metadata.parquet
   matrix_orientation: observations_by_genes
   n_genes: 20000
+  expected_input: raw_or_near_raw_nonnegative_counts
 
 splits:
   group_column: study_id
@@ -18,22 +20,40 @@ splits:
   selection_split: validation
   report_split: test
   locked_test: true
+  biological_independence: study_family_then_subject_then_sample
 
 preprocessing:
   feature_selection: train_only
   normalization: train_only
-  imputation: train_only
+  imputation: prohibited_for_primary_training
+  encoder_transform: log1p_counts
+  decoder_likelihood: negative_binomial
+  library_size: observed_per_cell
   unknown_metadata: reject
-  species_orthology: explicit_review_required
+  species_orthology: explicit_one_to_one_review_required
+  modality_mixing: prohibited_without_explicit_multimodal_model
 
 training:
   seeds: [13, 42, 73, 101, 131]
   primary_seed: 42
   epochs: 10
   batch_size: 8
-  gradient_accumulation: required_for_memory_constrained_hardware
+  gradient_accumulation: enabled_when_needed
   mixed_precision: recommended
+  gradient_clipping: 5.0
+  mask_fraction: 0.15
   device: auto
+
+objectives:
+  count_reconstruction: negative_binomial_nll
+  masked_gene_prediction: true
+  view_invariance: true
+  anti_collapse: variance_and_covariance
+  cell_type_auxiliary: true
+  maturation_auxiliary: true
+  injury_auxiliary: true
+  species_adversarial: true
+  species_adversarial_weight: 0.10
 
 required_metadata:
   - study_id
@@ -47,19 +67,30 @@ required_metadata:
 
 architecture:
   gene_dim: 1024
-  n_programs: 32
-  n_layers: 6
+  n_programs: 64
+  n_layers: 8
   n_heads: 16
-  shared_dim: 512
-  private_dim: 128
+  ff_mult: 4
+  shared_dim: 768
+  private_dim: 256
+  dropout: 0.10
+  gene_identity_embeddings: true
+  program_query_cross_attention: true
+  dense_gene_self_attention: false
+  transcriptome_scale_decoder: true
+  count_aware_decoder: true
+  masked_gene_head: true
+  species_adversarial_head: true
 
-# This configuration describes the serious research model. It must not be
-# interpreted as evidence that the model has been biologically validated.
-
+# This configuration describes a high-capacity research model. It is not
+# evidence of biological validity. Biological conclusions require locked
+# external tests and experimental or orthogonal validation.
 guardrails:
   train_only_fit: true
   no_random_cell_split: true
   no_unresolved_labels: true
+  no_imputation_primary: true
   raw_expression_not_committed: true
+  orthology_required_before_cross_species_training: true
   empirical_claims_require_locked_test: true
   biological_claims_require_external_validation: true
