@@ -1,0 +1,55 @@
+{
+  "schema_version": "1.0",
+  "accession": "GSE153480",
+  "status": "template_requires_url_resolution",
+  "purpose": "Explicit declaration of processed 10x MTX/TSV inputs; do not commit downloaded data.",
+  "source": "NCBI GEO",
+  "series_url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE153480",
+  "files": [
+    {
+      "accession": "GSM4644949",
+      "expected_layout": "10x_mtx_tsv",
+      "required": ["barcodes.tsv.gz", "genes.tsv.gz", "matrix.mtx.gz"]
+    },
+    {
+      "accession": "GSM4644950",
+      "expected_layout": "10x_mtx_tsv",
+      "required": ["barcodes.tsv.gz", "genes.tsv.gz", "matrix.mtx.gz"]
+    },
+    {
+      "accession": "GSM4644951",
+      "expected_layout": "10x_mtx_tsv",
+      "required": ["barcodes.tsv.gz", "genes.tsv.gz", "matrix.mtx.gz"]
+    },
+    {
+      "accession": "GSM4644952",
+      "expected_layout": "10x_mtx_tsv",
+      "required": ["barcodes.tsv.gz", "genes.tsv.gz", "matrix.mtx.gz"]
+    },
+    {
+      "accession": "GSM4644953",
+      "expected_layout": "10x_mtx_tsv",
+      "required": ["barcodes.tsv.gz", "genes.tsv.gz", "matrix.mtx.gz"]
+    },
+    {
+      "accession": "GSM4644954",
+      "expected_layout": "10x_mtx_tsv",
+      "required": ["barcodes.tsv.gz", "genes.tsv.gz", "matrix.mtx.gz"]
+    },
+    {
+      "accession": "GSM4644955",
+      "expected_layout": "10x_mtx_tsv",
+      "required": ["barcodes.tsv.gz", "genes.tsv.gz", "matrix.mtx.gz"]
+    },
+    {
+      "accession": "GSM4644956",
+      "expected_layout": "10x_mtx_tsv",
+      "required": ["barcodes.tsv.gz", "genes.tsv.gz", "matrix.mtx.gz"]
+    }
+  ],
+  "integrity": {
+    "sha256_required": true,
+    "download_timestamp_required": true,
+    "raw_expression_commit_prohibited": true
+  }
+}
