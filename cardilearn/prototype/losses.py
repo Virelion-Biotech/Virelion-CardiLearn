@@ -1,4 +1,8 @@
-"""Training losses for CardiLearn v0.1."""
+"""Training objectives for CardiLearn.
+
+The research path uses likelihoods appropriate for count-based single-cell RNA
+measurements rather than treating reconstruction as ordinary Gaussian error.
+"""
 from __future__ import annotations
 
 import torch
@@ -6,7 +10,38 @@ from torch.nn import functional as F
 
 
 def reconstruction_loss(prediction: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    """Legacy smooth-L1 reconstruction used by the prototype."""
     return F.smooth_l1_loss(prediction, target)
+
+
+def negative_binomial_loss(mu: torch.Tensor, theta: torch.Tensor, counts: torch.Tensor, reduction: str = "mean") -> torch.Tensor:
+    """Negative-binomial NLL for UMI/read count data.
+
+    ``mu`` is the expected count and ``theta`` is inverse-dispersion. The
+    likelihood explicitly models overdispersion instead of assuming Gaussian
+    residuals. This is the default reconstruction objective for CardiLearnLarge.
+    """
+    if torch.any(counts < 0):
+        raise ValueError("counts must be nonnegative")
+    if torch.any(mu <= 0) or torch.any(theta <= 0):
+        raise ValueError("mu and theta must be positive")
+    probs = theta / (theta + mu)
+    distribution = torch.distributions.NegativeBinomial(total_count=theta, probs=probs)
+    nll = -distribution.log_prob(counts)
+    if reduction == "sum":
+        return nll.sum()
+    if reduction == "none":
+        return nll
+    return nll.mean()
+
+
+def masked_gene_loss(prediction: torch.Tensor, target_counts: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    """Self-supervised masked-gene objective on log1p expression."""
+    target = torch.log1p(torch.clamp(target_counts, min=0))
+    per_gene = F.smooth_l1_loss(prediction, target, reduction="none")
+    mask = mask.to(dtype=per_gene.dtype)
+    denom = torch.clamp(mask.sum(), min=1.0)
+    return (per_gene * mask).sum() / denom
 
 
 def invariance_loss(z1: torch.Tensor, z2: torch.Tensor) -> torch.Tensor:
@@ -48,11 +83,12 @@ def cell_type_loss(logits: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
     return F.cross_entropy(logits, target.long())
 
 
-def regeneration_rank_loss(
-    score_a: torch.Tensor,
-    score_b: torch.Tensor,
-    weight: torch.Tensor | None = None,
-) -> torch.Tensor:
+def species_adversarial_loss(logits: torch.Tensor, species: torch.Tensor) -> torch.Tensor:
+    """Classifier loss paired with gradient reversal in CardiLearnLarge."""
+    return F.cross_entropy(logits, species.long())
+
+
+def regeneration_rank_loss(score_a: torch.Tensor, score_b: torch.Tensor, weight: torch.Tensor | None = None) -> torch.Tensor:
     raw = F.softplus(-(score_a - score_b))
     if weight is not None:
         raw = raw * weight
