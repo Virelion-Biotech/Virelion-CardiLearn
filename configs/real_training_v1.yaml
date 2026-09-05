@@ -3,13 +3,14 @@ schema_version: "1.0"
 experiment:
   name: cardilearn_real_training_v1
   task: representation_learning
-  model: cardilearn_proto
+  model: cardilearn_large
+  model_scale: transcriptome_scale
 
 input:
   expression: /path/to/training_ready_expression.npz
   metadata: /path/to/training_ready_metadata.parquet
   matrix_orientation: observations_by_genes
-  n_genes: 2000
+  n_genes: 20000
 
 splits:
   group_column: study_id
@@ -23,12 +24,15 @@ preprocessing:
   normalization: train_only
   imputation: train_only
   unknown_metadata: reject
+  species_orthology: explicit_review_required
 
 training:
   seeds: [13, 42, 73, 101, 131]
   primary_seed: 42
   epochs: 10
-  batch_size: 32
+  batch_size: 8
+  gradient_accumulation: required_for_memory_constrained_hardware
+  mixed_precision: recommended
   device: auto
 
 required_metadata:
@@ -41,9 +45,21 @@ required_metadata:
   - maturation
   - injury
 
+architecture:
+  gene_dim: 1024
+  n_programs: 32
+  n_layers: 6
+  n_heads: 16
+  shared_dim: 512
+  private_dim: 128
+
+# This configuration describes the serious research model. It must not be
+# interpreted as evidence that the model has been biologically validated.
+
 guardrails:
   train_only_fit: true
   no_random_cell_split: true
   no_unresolved_labels: true
   raw_expression_not_committed: true
   empirical_claims_require_locked_test: true
+  biological_claims_require_external_validation: true
