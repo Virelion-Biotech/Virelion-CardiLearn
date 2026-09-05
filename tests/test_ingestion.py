@@ -1,10 +1,19 @@
 from __future__ import annotations
 
+import gzip
+
 import numpy as np
 import pandas as pd
 from scipy import sparse
+from scipy.io import mmwrite
 
-from cardilearn.ingestion import SparseExpression, apply_gene_map, select_variable_genes_sparse, validate_metadata
+from cardilearn.ingestion import (
+    SparseExpression,
+    apply_gene_map,
+    read_10x_mtx,
+    select_variable_genes_sparse,
+    validate_metadata,
+)
 
 
 def test_sparse_expression_validates_and_selects_train_only_genes():
@@ -48,3 +57,19 @@ def test_metadata_hierarchy_rejects_conflicting_sample_parent():
         assert "sample_id" in str(exc)
     else:
         raise AssertionError("conflicting sample parent mapping must be rejected")
+
+
+def test_read_10x_mtx_accepts_legacy_genes_tsv(tmp_path):
+    matrix_dir = tmp_path / "legacy_10x"
+    matrix_dir.mkdir()
+    matrix = sparse.coo_matrix(np.array([[1, 0], [0, 2]], dtype=np.int32))
+    with gzip.open(matrix_dir / "matrix.mtx.gz", "wb") as handle:
+        mmwrite(handle, matrix)
+    (matrix_dir / "barcodes.tsv").write_text("cellA\ncellB\n", encoding="utf-8")
+    (matrix_dir / "genes.tsv").write_text("geneA\nGeneB\n", encoding="utf-8")
+
+    result = read_10x_mtx(matrix_dir)
+
+    assert result.observation_ids == ("cellA", "cellB")
+    assert result.gene_ids == ("GeneB", "geneA")
+    assert result.X.toarray().tolist() == [[1.0, 0.0], [0.0, 2.0]]
