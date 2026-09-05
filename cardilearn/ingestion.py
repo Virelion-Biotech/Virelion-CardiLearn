@@ -50,7 +50,12 @@ class SparseExpression:
 
 
 def read_10x_mtx(matrix_dir: str | Path, *, make_csr: bool = True) -> SparseExpression:
-    """Read a 10x Matrix Market directory without densifying expression."""
+    """Read a 10x Matrix Market directory without densifying expression.
+
+    Both modern ``features.tsv`` and legacy ``genes.tsv`` layouts are accepted.
+    The latter is common in older GEO 10x deposits, so acquisition does not need
+    to rename or mutate source files before ingestion.
+    """
     root = Path(matrix_dir)
     matrix_path = root / "matrix.mtx"
     if not matrix_path.exists():
@@ -64,8 +69,14 @@ def read_10x_mtx(matrix_dir: str | Path, *, make_csr: bool = True) -> SparseExpr
     feature_path = root / "features.tsv"
     if not feature_path.exists():
         feature_path = root / "features.tsv.gz"
+    if not feature_path.exists():
+        feature_path = root / "genes.tsv"
+    if not feature_path.exists():
+        feature_path = root / "genes.tsv.gz"
     if not barcode_path.exists() or not feature_path.exists():
-        raise FileNotFoundError("10x barcodes.tsv(.gz) and features.tsv(.gz) are required")
+        raise FileNotFoundError(
+            "10x barcodes.tsv(.gz) and features.tsv(.gz) or genes.tsv(.gz) are required"
+        )
 
     matrix = mmread(matrix_path)
     matrix = matrix.tocsr() if make_csr else sparse.csr_matrix(matrix)
