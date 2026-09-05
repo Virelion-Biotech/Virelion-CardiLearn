@@ -1,66 +1,88 @@
 # Virelion CardiLearn
 
-**A reproducible research prototype for cardiac molecular-state representation learning.**
+**A reproducible research prototype for large-scale cardiac molecular-state representation learning.**
 
-CardiLearn is the learning layer of the Virelion cardiac ML ecosystem. This repository contains a deliberately small reference architecture for transcriptomic representation learning, together with reproducible data, validation, interpretation, perturbation, and benchmarking infrastructure.
+CardiLearn is the learning layer of the Virelion cardiac ML ecosystem. It is designed to learn transcriptome-scale representations of cardiac cell states across development, maturation, injury, regeneration, and species, with explicit leakage control and held-out biological evaluation.
 
-> **Scientific status:** CardiLearn is an executable research prototype, not a validated cardiac foundation model, clinical system, or evidence of regenerative efficacy. The current neural architecture is intentionally CPU-friendly (2,000 input genes, 64-dimensional gene tokens, 16 learned program queries). Its purpose is to validate the data contracts, leakage controls, objectives, evaluation protocol, and end-to-end research workflow before scaling model capacity. Real-data scientific claims must be demonstrated on locked held-out benchmarks and, where appropriate, independent biological validation.
+> **Scientific status:** CardiLearn is an executable research model under development, not a validated cardiac foundation model, clinical system, or evidence of regenerative efficacy. The repository now contains both a small integration model and a large research architecture. The large architecture targets ~20,000 genes, 1,024-dimensional gene/program representations, 32 learned molecular programs, six deep Transformer blocks, and 512-dimensional shared state. Its scale makes it biologically substantive enough to test meaningful transcriptome-level hypotheses, but scale alone is not biological validation. Claims require locked real-data training, held-out benchmarks, cross-study/species validation, and independent biological validation where appropriate.
 
-## Scope: prototype first, claims later
+## Research model: from prototype to serious scale
 
-The project intentionally separates **software maturity** from **scientific maturity**. A sophisticated validation framework does not make a small prototype biologically validated. CardiLearn therefore uses the following order:
+The small `CardiLearnProto` model remains useful for software development. The research path is now `CardiLearnLarge`.
+
+### CardiLearnLarge reference scale
+
+- **~20,000 transcriptome genes** rather than a 2,000-gene toy subset;
+- **1,024-dimensional gene/program representations**;
+- **32 learned molecular programs**;
+- **6 Transformer blocks** over program tokens;
+- **16 attention heads**;
+- **512-dimensional shared biological state**;
+- **128-dimensional private state**;
+- transcriptome-scale reconstruction;
+- species and assay context conditioning;
+- gene→program cross-attention followed by deep program-level interaction modeling.
+
+This is a deliberate architectural shift: the model spends capacity on **gene-network context and molecular programs**, rather than simply inflating a conventional MLP. Dense self-attention over all ~20k genes would be computationally prohibitive, so CardiLearn first compresses the transcriptome through learned program queries and applies depth to the resulting molecular-program sequence.
+
+The large architecture is intended to be trained on a broad, carefully curated corpus rather than on one small cardiac dataset. Modern single-cell foundation models demonstrate that meaningful transcriptomic representation learning operates at tens to hundreds of millions of cells and roughly 20k-gene vocabulary scales; CardiLearn's research target is therefore deliberately aligned with that regime while remaining cardiac-specialized. citeturn0search1turn0search3turn0search10
+
+## Scope: scale first, claims later
+
+The project separates **model scale**, **software maturity**, and **scientific validity**. A large model can learn more structure without proving that the learned structure is biologically correct. CardiLearn therefore uses:
 
 ```text
-software correctness
+large-scale architecture
    ↓
-data / metadata audit
+large, diverse, provenance-locked corpus
    ↓
-locked real-data cohort
+train-only preprocessing
    ↓
-training
+biological-family-safe split
    ↓
-locked benchmark
+pretraining
    ↓
-unseen-study / species validation
+locked downstream benchmarks
    ↓
-interpretation
+unseen-study validation
    ↓
-independent biological validation
+unseen-species validation
+   ↓
+mechanistic / experimental validation
 ```
 
-Until the real-data lock and experiments are executed, the repository should be read as **research infrastructure plus a model prototype**, not as a completed biological result.
+This is intentionally stricter than simply reporting training loss. Recent evaluations of single-cell foundation models show that model scale does not guarantee reliable zero-shot biological performance, reinforcing the need for strong external benchmarks and simple baselines. citeturn0search7
 
 ## Research model
 
 ```text
-expression
-   → gene tokens
-   → learned molecular programs
-   → molecular representation
-   + species / assay context
-   → shared + private latent state
-   → maturation / injury / cell-state heads
-   → reconstruction
+transcriptome (~20k genes)
+        ↓
+gene/value embeddings
+        ↓
+32 learned molecular program queries
+        ↓
+program-level Transformer stack
+        ↓
+context-conditioned molecular state
+        ↓
+shared + private latent representation
+        ├── maturation
+        ├── injury / disease state
+        ├── cell identity
+        ├── reconstruction
+        └── downstream perturbation / transition models
 ```
 
-The current reference architecture is intentionally small:
-
-- 2,000 input genes
-- 64-dimensional gene tokens
-- 16 learned molecular program queries
-- 128-dimensional shared latent
-- 32-dimensional private latent
-
-These dimensions are **prototype settings, not claims of biological sufficiency**. Scaling the architecture is a later experimental variable and must earn its complexity through held-out evidence.
-
-Implementation: `cardilearn/prototype/`.
+Implementation: `cardilearn/prototype/model.py`.
 
 ## Research capabilities
 
 | Layer | Purpose |
 |---|---|
-| Data + validation | explicit contracts, provenance, integrity checks, leakage-safe splits |
-| Representation | shared/private cardiac molecular-state representation |
+| Data + validation | explicit contracts, provenance, integrity checks, leakage-safe biological splits |
+| Large representation | transcriptome-scale shared/private cardiac molecular-state representation |
+| Molecular programs | learned latent programs intended to capture recurring gene-network structure |
 | Interpretability | attribution, masking/permutation, enrichment, counterfactuals, ortholog conservation |
 | Perturbation | predictive latent-response modeling with uncertainty |
 | Benchmarking | matched baseline comparisons with locked evaluation rules |
@@ -73,7 +95,9 @@ Documentation standard: `docs/STEP17_DOCUMENTATION.md`.
 
 ## Scientific formulation
 
-The initial learning objectives include molecular reconstruction, technical-view invariance, anti-collapse regularization, biological-state supervision, maturation ordering/regression, and injury-state prediction. Regeneration is not implemented as a hand-written marker score. Cross-species alignment and regeneration/transition objectives require evidence-backed datasets and their own locked evaluation protocols.
+The learning objectives include molecular reconstruction, technical-view invariance, anti-collapse regularization, biological-state supervision, maturation ordering/regression, and injury-state prediction. The next research expansion should add explicit masked-gene modeling and cross-study/cross-species objectives so that the large model learns transferable molecular structure rather than merely reconstructing its training cohorts.
+
+Regeneration is not implemented as a hand-written marker score. A regenerative representation must be demonstrated by generalization across independent injury/regeneration studies and, ultimately, experimental evidence.
 
 ## Data hierarchy and leakage controls
 
@@ -110,9 +134,23 @@ The mandatory initial comparison is:
 1. PCA + linear probe
 2. plain MLP
 3. plain autoencoder
-4. CardiLearn
+4. CardiLearnLarge
 
-The structured model only earns additional complexity if it improves held-out biological generalization and survives shortcut/robustness tests.
+The large model only earns its complexity if it improves held-out biological generalization and survives shortcut/robustness tests. The small `CardiLearnProto` is retained as an engineering smoke-test model, not as the scientific endpoint.
+
+## Training scale and hardware
+
+The large architecture is no longer designed around 12-GB CPU development. A serious run should be treated as GPU research training.
+
+Recommended starting target:
+
+- NVIDIA GPU: **24 GB VRAM or more**;
+- system RAM: **32–64 GB**;
+- local NVMe: **500 GB–1 TB+** for processed matrices, caches, checkpoints, and manifests;
+- CPU: **8–16+ cores**;
+- mixed precision and gradient accumulation for memory control.
+
+A 13-GB Colab RAM environment can still be useful for preprocessing, metadata audits, smoke tests, and the small model. It should **not** be treated as the target environment for full-scale CardiLearnLarge pretraining.
 
 ## Interpretability
 
@@ -145,13 +183,13 @@ cardilearn train --data data.csv --target label --output runs/example
 cardilearn benchmark-info --definition configs/benchmark_v1.yaml
 ```
 
-Optional dependencies are separated in `pyproject.toml`; PyTorch is not required for metadata/validation infrastructure because prototype imports are lazy.
+For real-data research training, `scripts/train_real_data.py` now defaults to `CardiLearnLarge`; `--model-size proto` is available for lightweight software validation.
 
 ## Repository structure
 
 ```text
 cardilearn/
-├── prototype/            # small reference representation-learning model
+├── prototype/            # CardiLearnProto + CardiLearnLarge
 ├── interpretability/     # Step 13
 ├── perturbation/         # Step 14
 ├── benchmark_protocol.py # Step 15 evaluation contract
@@ -178,24 +216,26 @@ tests/
 The maturity gate is a governance protocol, not evidence that the model has already passed it. Each stage requires actual evidence before the next claim is made:
 
 ```text
-software tests
+architecture
    ↓
-data/metadata audit
+corpus audit
    ↓
 data lock
    ↓
-training
+large-scale pretraining
    ↓
 locked benchmark
    ↓
-unseen-study/species validation
+unseen-study validation
    ↓
-interpretation
+unseen-species validation
+   ↓
+mechanistic interpretation
    ↓
 independent biological validation
 ```
 
-A passing CI build demonstrates software correctness, not biological validity. No benchmark or biological performance claim is made until real datasets are materialized and the declared protocol is executed.
+A passing CI build demonstrates software correctness, not biological validity. A large parameter count demonstrates capacity, not biological significance.
 
 ## Ecosystem
 
@@ -211,7 +251,7 @@ A passing CI build demonstrates software correctness, not biological validity. N
 
 ## Current priority
 
-The next meaningful milestone is **not another architectural feature**. It is the first complete real-data result: a reviewed cohort, frozen split, train-only preprocessing, reproducible training run, locked benchmark against the required baselines, and held-out evaluation. Until that exists, model capacity and additional ecosystem surface area remain secondary.
+The architecture is now large enough that **the bottleneck is no longer model size**. The next major milestone is the training corpus: a genuinely broad, independently sourced cardiac transcriptomic corpus with reviewed biological hierarchy, explicit orthology, controlled modality boundaries, and frozen study-family splits. Only after that corpus is locked should we spend substantial GPU time pretraining CardiLearnLarge.
 
 ## License
 
