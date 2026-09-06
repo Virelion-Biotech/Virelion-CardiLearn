@@ -115,16 +115,16 @@ class CardiLearnProto(nn.Module):
 
     def forward(self, x: torch.Tensor, species: torch.Tensor, assay: torch.Tensor) -> CardiLearnOutput:
         z_shared, z_private, context, programs, attention = self.encode(x, species, assay)
-        return CardiLearnOutput(z_shared, z_private, self.maturity(z_shared).squeeze(-1), self.injury(z_shared).squeeze(-1), self.cell_type(z_shared), self.decoder(torch.cat([z_shared, z_private, context], dim=-1)), programs, attention)
+        return CardiLearnOutput(z_shared=z_shared, z_private=z_private, maturity=self.maturity(z_shared).squeeze(-1), injury=self.injury(z_shared).squeeze(-1), cell_type=self.cell_type(z_shared), reconstruction=self.decoder(torch.cat([z_shared, z_private, context], dim=-1)), program_tokens=programs, program_attention=attention)
 
 
 class CardiLearnLarge(nn.Module):
-    """Transcriptome-scale CardiLearn research architecture.
+    """Transcriptome-scale CardiLearn molecular encoder.
 
-    The architecture is biologically grounded rather than merely widened:
-    raw counts are stabilized for encoding, the generative reconstruction uses
-    a library-size-aware negative-binomial likelihood, masked genes are learned
-    as a self-supervised task, and species is treated as a nuisance factor in
+    This is the molecular branch of CardiLearn-X, not the complete cardiac
+    model. Raw counts are stabilized for encoding; reconstruction uses a
+    library-size-aware negative-binomial likelihood; masked genes provide a
+    self-supervised objective; and species is treated as a nuisance factor in
     the shared state after explicit upstream orthology harmonization.
     """
     def __init__(self, n_genes: int, n_species: int, n_assays: int, n_cell_types: int,
@@ -153,7 +153,6 @@ class CardiLearnLarge(nn.Module):
         self.program_norm = nn.LayerNorm(gene_dim)
         self.program_pool = nn.Linear(gene_dim, 1)
 
-        # Technical context is decoder-side. It cannot trivially define z_shared.
         self.species_embedding = nn.Embedding(n_species, 64)
         self.assay_embedding = nn.Embedding(n_assays, 32)
         self.context_projection = nn.Sequential(nn.Linear(96, 256), nn.LayerNorm(256), nn.GELU(), nn.Linear(256, 256))
@@ -212,8 +211,20 @@ class CardiLearnLarge(nn.Module):
         mu, theta = self.decode_counts(z_shared, z_private, species, assay, library_size)
         masked_prediction = self.masked_gene_head(torch.cat([z_shared, z_private], dim=-1))
         species_logits = self.species_adversary(self.grl(z_shared))
-        return CardiLearnOutput(z_shared, z_private, self.maturity(z_shared).squeeze(-1), self.injury(z_shared).squeeze(-1),
-                                self.cell_type(z_shared), mu, programs, attention, mu, theta, masked_prediction, species_logits)
+        return CardiLearnOutput(
+            z_shared=z_shared,
+            z_private=z_private,
+            maturity=self.maturity(z_shared).squeeze(-1),
+            injury=self.injury(z_shared).squeeze(-1),
+            cell_type=self.cell_type(z_shared),
+            reconstruction=mu,
+            program_tokens=programs,
+            program_attention=attention,
+            nb_mu=mu,
+            nb_theta=theta,
+            masked_prediction=masked_prediction,
+            species_logits=species_logits,
+        )
 
     def parameter_count(self, trainable_only: bool = True) -> int:
         return sum(p.numel() for p in self.parameters() if (p.requires_grad or not trainable_only))
