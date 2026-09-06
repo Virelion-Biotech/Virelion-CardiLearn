@@ -1,0 +1,40 @@
+schema_version: "1.0"
+model:
+  name: cardiLearn_x
+  purpose: unified_multimodal_cardiac_latent_state
+  modalities: [rna, ecg, mea]
+  fusion_dim: 768
+  private_dim: 256
+  fusion_depth: 8
+  fusion_heads: 12
+  phenotype_classes: 8
+  dropout: 0.10
+training:
+  objective_order:
+    - unimodal_pretraining
+    - paired_cross_modal_alignment
+    - shared_state_supervision
+    - calibration
+    - longitudinal_prediction
+    - intervention_selection
+  cross_modal_loss: symmetric_infonce
+  paired_examples_only_for_alignment: true
+  weak_pairs_must_be_flagged: true
+  modality_dropout_probability: 0.20
+  missing_modality_supported: true
+validation:
+  split_unit: biological_unit
+  forbidden_random_cell_split: true
+  require_locked_test: true
+  require_external_cohort: true
+  require_cross_cohort_generalization: true
+  require_ablation: true
+  require_calibration: true
+  no_claim_without_metric: true
+biological_contract:
+  shared_state_must_be_tested_against_independent_measurements: true
+  transcriptomics_gene_mapping_required: true
+  cross_species_orthology_required: true
+  cite_provenance_for_every_paired_observation: true
+  no_synthetic_pair_as_real_pair: true
+  no_causal_claim_from_predictive_latent: true
