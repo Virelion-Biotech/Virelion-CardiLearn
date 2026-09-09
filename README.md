@@ -18,10 +18,10 @@ The larger architecture is a research target, not a validated cardiac foundation
 ## Installation
 
 ```bash
-pip install -e .
+pip install -e '.[dev,torch]'
 ```
 
-For development/testing, install the repository's test/development extras where available.
+For development/testing, the command above installs the development and PyTorch extras required by the full test suite. The `torch` extra is optional for workflows that do not import the torch-backed model modules.
 
 ## Usage
 
