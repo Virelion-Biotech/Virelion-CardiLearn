@@ -7,7 +7,6 @@ from .config_loader import ConfigError, load_yaml_config, validate_reproducibili
 from .dataset_card import DatasetCard
 from .fusion import align_modalities, concatenate_embeddings
 from .modalities import OmicsMatrix, Waveform
-from .multimodal import CardiLearnX, CardiacFusionCore, SignalPatchEncoder, cosine_alignment_loss, modality_dropout
 from .registry import ModelRegistry
 from .reproducibility import (
     ReproducibilityManifest,
@@ -22,35 +21,24 @@ from .reproducibility import (
 from .schema import DatasetSpec, FeatureManifest
 from .validation import IntegrityReport, validate_dataset
 
+# Torch-backed multimodal models remain an optional dependency. The base package,
+# sklearn training API, CLI, and HeartTwin native adapter must stay importable
+# without pulling a heavyweight GPU/torch stack into every environment.
+try:  # pragma: no cover - availability depends on installation extras
+    from .multimodal import CardiLearnX, CardiacFusionCore, SignalPatchEncoder, cosine_alignment_loss, modality_dropout
+except ImportError:
+    CardiLearnX = None  # type: ignore[assignment,misc]
+    CardiacFusionCore = None  # type: ignore[assignment,misc]
+    SignalPatchEncoder = None  # type: ignore[assignment,misc]
+    cosine_alignment_loss = None  # type: ignore[assignment]
+    modality_dropout = None  # type: ignore[assignment]
+
 __all__ = [
-    "BenchmarkSpec",
-    "CardiacFusionCore",
-    "CardiLearnX",
-    "ConfigError",
-    "DatasetCard",
-    "DatasetSpec",
-    "FeatureManifest",
-    "IntegrityReport",
-    "ModelRegistry",
-    "OmicsMatrix",
-    "ReproducibilityManifest",
-    "SignalPatchEncoder",
-    "Waveform",
-    "align_modalities",
-    "compare_seeded_scores",
-    "config_fingerprint",
-    "concatenate_embeddings",
-    "cosine_alignment_loss",
-    "dataframe_fingerprint",
-    "fingerprint_ids",
-    "fingerprint_mapping",
-    "load_manifest",
-    "load_yaml_config",
-    "make_manifest",
-    "modality_dropout",
-    "rank_models",
-    "save_manifest",
-    "summarize_repeated_scores",
-    "validate_dataset",
+    "BenchmarkSpec", "CardiacFusionCore", "CardiLearnX", "ConfigError", "DatasetCard", "DatasetSpec",
+    "FeatureManifest", "IntegrityReport", "ModelRegistry", "OmicsMatrix", "ReproducibilityManifest",
+    "SignalPatchEncoder", "Waveform", "align_modalities", "compare_seeded_scores", "config_fingerprint",
+    "concatenate_embeddings", "cosine_alignment_loss", "dataframe_fingerprint", "fingerprint_ids",
+    "fingerprint_mapping", "load_manifest", "load_yaml_config", "make_manifest", "modality_dropout",
+    "rank_models", "save_manifest", "summarize_repeated_scores", "validate_dataset",
     "validate_reproducibility_config",
 ]
