@@ -155,8 +155,8 @@ class GRNProgramRouter(nn.Module):
         self.gate = nn.Sequential(nn.LayerNorm(dim), nn.Linear(dim, 1))
 
     def _logits_chunk(self, gate: torch.Tensor, start: int, end: int) -> torch.Tensor:
-        assignment = self.assignment_logits[start:end].T.unsqueeze(0)
-        prior = self.prior[start:end].T.unsqueeze(0)
+        assignment = self.assignment_logits[start:end].T.unsqueeze(0).to(dtype=gate.dtype, device=gate.device)
+        prior = self.prior[start:end].T.unsqueeze(0).to(dtype=gate.dtype, device=gate.device)
         return assignment + self.prior_strength * prior + gate[:, None, start:end]
 
     def forward(self, gene_tokens: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
