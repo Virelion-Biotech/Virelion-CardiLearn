@@ -172,22 +172,23 @@ class GRNProgramRouter(nn.Module):
             end = min(start + self.chunk_size, self.n_genes)
             max_logits = torch.maximum(max_logits, self._logits_chunk(gate, start, end).amax(dim=-1))
 
-        denom = torch.zeros(batch, self.n_programs, dtype=gene_tokens.dtype, device=device)
+        accum_dtype = torch.float32 if gene_tokens.dtype in {torch.float16, torch.bfloat16} else gene_tokens.dtype
+        denom = torch.zeros(batch, self.n_programs, dtype=accum_dtype, device=device)
         for start in range(0, self.n_genes, self.chunk_size):
             end = min(start + self.chunk_size, self.n_genes)
-            weights = torch.exp(self._logits_chunk(gate, start, end) - max_logits.unsqueeze(-1))
+            weights = torch.exp(self._logits_chunk(gate, start, end) - max_logits.unsqueeze(-1)).to(accum_dtype)
             denom += weights.sum(dim=-1)
 
         programs = torch.zeros(
-            batch, self.n_programs, self.dim, dtype=gene_tokens.dtype, device=device
+            batch, self.n_programs, self.dim, dtype=accum_dtype, device=device
         )
         for start in range(0, self.n_genes, self.chunk_size):
             end = min(start + self.chunk_size, self.n_genes)
-            weights = torch.exp(self._logits_chunk(gate, start, end) - max_logits.unsqueeze(-1))
-            programs += torch.einsum("bkg,bgd->bkd", weights, gene_tokens)
+            weights = torch.exp(self._logits_chunk(gate, start, end) - max_logits.unsqueeze(-1)).to(accum_dtype)
+            programs += torch.einsum("bkg,bgd->bkd", weights, gene_tokens.to(accum_dtype))
         programs = programs / denom.clamp_min(torch.finfo(programs.dtype).tiny).unsqueeze(-1)
         program_mass = denom / denom.sum(dim=-1, keepdim=True).clamp_min(torch.finfo(denom.dtype).tiny)
-        return programs, program_mass
+        return programs.to(gene_tokens.dtype), program_mass.to(gene_tokens.dtype)
 
     @torch.no_grad()
     def top_genes(
