@@ -165,6 +165,120 @@ def classify_condition(rec: dict[str, object]) -> str | None:
     return None
 
 
+def normalized_sample_label(value: str) -> str:
+    value = str(value).strip().lower()
+    value = re.sub(r"\.(?:txt|tsv|csv|tab|gz|bam|sam)$", "", value)
+    value = value.replace("myocardial infarction", "mi")
+    value = value.replace("sham-operated", "sham")
+    value = re.sub(r"\b(?:reanalysis|sample|library|heart|left ventrical|left ventricle)\b", " ", value)
+    value = re.sub(r"\b(\d+)\s*days?\b", r"\1d", value)
+    value = re.sub(r"\b(\d+)\s*day\b", r"\1d", value)
+    value = re.sub(r"\bmi\s*(\d+)\s*d\b", r"mi \1d", value)
+    value = re.sub(r"[^a-z0-9]+", " ", value)
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def sample_column_aliases(rec: dict[str, object]) -> set[str]:
+    gsm = str(rec["geo_accession"]).upper()
+    title = str(rec.get("title", "")).strip()
+    aliases = {
+        normalized_sample_label(gsm),
+        normalized_sample_label(title),
+    }
+
+    title_norm = normalized_sample_label(title)
+
+    condition = "mi" if bool(MI_RE.search(title)) else "sham" if bool(SHAM_RE.search(title)) else None
+    rep_match = re.search(r"\brep\s*([0-9]+)\b", title.lower())
+    time_match = re.search(r"\b([0-9]+)\s*days?\b", title.lower())
+
+    if condition:
+        parts = [condition]
+        if time_match:
+            parts.append(f"{time_match.group(1)}d")
+        if rep_match:
+            parts.append(f"rep{rep_match.group(1)}")
+        aliases.add(normalized_sample_label(" ".join(parts)))
+
+    if title_norm:
+        aliases.add(title_norm.replace(" ", "_"))
+        aliases.add(title_norm.replace(" ", ""))
+
+    return {x for x in aliases if x}
+
+
+def resolve_matrix_sample_columns(
+    columns: list[str],
+    sample_records: list[dict[str, object]],
+) -> dict[str, str]:
+    by_gsm = {
+        str(rec["geo_accession"]).upper(): rec
+        for rec in sample_records
+    }
+
+    alias_to_gsm: dict[str, set[str]] = {}
+
+    for gsm, rec in by_gsm.items():
+        for alias in sample_column_aliases(rec):
+            alias_to_gsm.setdefault(alias, set()).add(gsm)
+
+    resolved: dict[str, str] = {}
+
+    for column in columns:
+        text = str(column).strip()
+        gsm_hits = [
+            gsm.upper()
+            for gsm in GSM_RE.findall(text)
+            if gsm.upper() in by_gsm
+        ]
+
+        if gsm_hits:
+            unique = sorted(set(gsm_hits))
+            if len(unique) != 1:
+                raise ValueError(
+                    f"ambiguous GSM mapping for matrix column {column!r}: {unique}"
+                )
+            resolved[unique[0]] = column
+            continue
+
+        alias = normalized_sample_label(text)
+        matches = sorted(alias_to_gsm.get(alias, set()))
+
+        if len(matches) == 1:
+            resolved[matches[0]] = column
+        elif len(matches) > 1:
+            raise ValueError(
+                f"ambiguous GEO-title mapping for matrix column {column!r}: {matches}"
+            )
+
+    duplicate_columns = {}
+    for gsm, column in resolved.items():
+        duplicate_columns.setdefault(column, []).append(gsm)
+
+    bad_columns = {
+        column: gsms
+        for column, gsms in duplicate_columns.items()
+        if len(gsms) > 1
+    }
+
+    if bad_columns:
+        raise ValueError(
+            f"one matrix column mapped to multiple GSMs: {bad_columns}"
+        )
+
+    duplicate_gsm_hits = {}
+    for gsm in resolved:
+        duplicate_gsm_hits.setdefault(gsm, 0)
+        duplicate_gsm_hits[gsm] += 1
+
+    if any(count > 1 for count in duplicate_gsm_hits.values()):
+        raise ValueError(
+            "a GSM mapped to multiple matrix columns"
+        )
+
+    return resolved
+
+
 def listing_urls(url: str) -> list[str]:
     try:
         r = requests.get(url, timeout=TIMEOUT)
@@ -309,32 +423,56 @@ def integer_values(series: pd.Series) -> tuple[np.ndarray, bool]:
     return values, bool(np.isclose(values, np.rint(values), rtol=0.0, atol=0.0).all())
 
 
-def parse_count_file(path: Path, expected: list[str]) -> dict[str, pd.Series]:
+def parse_count_file(
+    path: Path,
+    sample_records: list[dict[str, object]],
+) -> dict[str, pd.Series]:
     df = read_table(path)
-    expected_upper = {x.upper() for x in expected}
+    expected = [
+        str(rec["geo_accession"]).upper()
+        for rec in sample_records
+    ]
+    expected_upper = set(expected)
     gene_col = df.columns[0]
 
-    # Matrix path: sample/GSM identifiers are present in column names.
-    matrix_cols: dict[str, str] = {}
-    for col in df.columns[1:]:
-        ids = GSM_RE.findall(str(col))
-        for gsm in ids:
-            if gsm.upper() in expected_upper:
-                matrix_cols[gsm.upper()] = col
+    # Matrix path: sample/GSM identifiers OR explicit GEO sample-title aliases
+    # are present in column names. Annotation columns are ignored because they
+    # cannot resolve to a locked biological unit.
+    matrix_cols = resolve_matrix_sample_columns(
+        list(df.columns[1:]),
+        sample_records,
+    )
+
     if matrix_cols:
         out: dict[str, pd.Series] = {}
         genes = df[gene_col].astype(str).str.strip()
+
         for gsm, col in matrix_cols.items():
             values, integer = integer_values(df[col])
+
             if not integer:
-                raise ValueError(f"{col} is not raw integer-like counts")
-            out[gsm] = pd.Series(values.astype(np.int64), index=genes, name=gsm)
+                raise ValueError(
+                    f"{col} is not raw integer-like counts"
+                )
+
+            out[gsm] = pd.Series(
+                values.astype(np.int64),
+                index=genes,
+                name=gsm,
+            )
+
         return out
 
     # Single-sample path: GSM is in filename, exactly matching one manifest unit.
-    filename_ids = [x.upper() for x in GSM_RE.findall(path.name) if x.upper() in expected_upper]
+    filename_ids = [
+        x.upper()
+        for x in GSM_RE.findall(path.name)
+        if x.upper() in expected_upper
+    ]
     if len(filename_ids) != 1:
-        raise ValueError("no unique manifest GSM in filename and no manifest GSM columns")
+        raise ValueError(
+            "no unique manifest GSM in filename and no manifest GSM/title aliases in columns"
+        )
 
     gsm = filename_ids[0]
     named_count_cols = [c for c in df.columns[1:] if COUNT_RE.fullmatch(str(c).strip())]
@@ -431,7 +569,7 @@ def acquire_counts(acc: str, rec: dict[str, object], samples: list[dict[str, obj
                 audit.append({"url": url, "status": "rejected", "reason": f"normalized-scale filename: {file.name}"})
                 continue
             try:
-                parsed = parse_count_file(file, expected)
+                parsed = parse_count_file(file, samples)
                 for gsm, series in parsed.items():
                     if gsm.upper() in parsed_samples:
                         halt(f"Multiple independent source files map to GSM {gsm} in {acc}; mapping is ambiguous")
