@@ -95,3 +95,15 @@ def test_conserved_gene_identity_and_group_pool():
     pooled = functional_group_pool(states, ids, 3)
     assert pooled.shape == (2, 3, 3)
     assert torch.allclose(pooled[:, 0], states[:, :2].mean(dim=1))
+
+
+def test_nb_decoder_respects_library_size():
+    model = CardiLearnResearch(
+        n_genes=32, n_species=1, n_assays=1, n_cell_types=2,
+        gene_dim=16, n_programs=4, n_layers=1, n_heads=4,
+        shared_dim=12, private_dim=8, decoder_dim=10,
+    )
+    counts = torch.poisson(torch.full((2, 32), 0.4))
+    library = counts.sum(dim=1).clamp_min(1.0)
+    out = model(counts, torch.zeros(2, dtype=torch.long), torch.zeros(2, dtype=torch.long), library_size=library)
+    assert torch.allclose(out.reconstruction_mu.sum(dim=1), library, rtol=1e-3, atol=1e-3)
