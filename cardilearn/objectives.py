@@ -22,13 +22,16 @@ def negative_binomial_nll(
         raise ValueError("counts must be finite and non-negative")
     if torch.any(mu <= 0) or torch.any(theta <= 0):
         raise ValueError("mu and theta must be positive")
-    log_theta_mu = torch.log(theta + mu)
+    mu32 = mu.float()
+    theta32 = theta.float()
+    counts32 = counts.float()
+    log_theta_mu = torch.log(theta32 + mu32)
     log_prob = (
-        torch.lgamma(counts + theta)
-        - torch.lgamma(theta)
-        - torch.lgamma(counts + 1.0)
-        + theta * (torch.log(theta) - log_theta_mu)
-        + counts * (torch.log(mu) - log_theta_mu)
+        torch.lgamma(counts32 + theta32)
+        - torch.lgamma(theta32)
+        - torch.lgamma(counts32 + 1.0)
+        + theta32 * (torch.log(theta32) - log_theta_mu)
+        + counts32 * (torch.log(mu32) - log_theta_mu)
     )
     nll = -log_prob
     if reduction == "none":
