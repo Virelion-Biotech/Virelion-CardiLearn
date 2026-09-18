@@ -5,7 +5,6 @@ pytest.importorskip("torch")
 
 import numpy as np
 import pandas as pd
-import pytest
 import torch
 from cardilearn.fusion import align_modalities, concatenate_embeddings
 from cardilearn.modalities import OmicsMatrix, Waveform
@@ -63,3 +62,16 @@ def test_modality_dropout_preserves_at_least_one():
     out = modality_dropout(x, probability=0.999)
     assert len(out) >= 1
     assert set(out).issubset(set(x))
+
+
+def test_signal_encoder_covers_non_multiple_tail():
+    model = SignalPatchEncoder(in_channels=1, d_model=16, patch_size=16, depth=1, heads=4)
+    x = torch.randn(2, 1, 130)
+    assert model(x).shape == (2, 16)
+
+
+def test_pairing_rejects_duplicate_biological_ids():
+    from cardilearn.fusion import audit_pairing
+    a = pd.DataFrame({"sample_id": ["s1", "s1"]})
+    b = pd.DataFrame({"sample_id": ["s1"]})
+    assert audit_pairing({"rna": a, "ecg": b}).status == "invalid_duplicate_ids"
