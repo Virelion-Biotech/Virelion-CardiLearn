@@ -13,6 +13,16 @@ class EncoderAdapter(Protocol):
         """Return one representation per biological observation."""
 
 
+def validate_embedding_output(values: Any, *, n_observations: int | None = None) -> Any:
+    """Validate an adapter output without importing NumPy into optional backends."""
+    shape = getattr(values, "shape", None)
+    if shape is None or len(shape) != 2:
+        raise ValueError("encoder output must be a two-dimensional array-like object")
+    if n_observations is not None and int(shape[0]) != n_observations:
+        raise ValueError("encoder output row count does not match observations")
+    return values
+
+
 @dataclass(frozen=True)
 class CallableEncoderAdapter:
     """Adapter for any callable encoder with an explicit provenance label."""
@@ -22,7 +32,8 @@ class CallableEncoderAdapter:
     provenance: dict[str, str]
 
     def encode(self, data: Any) -> Any:
-        return self.encoder(data)
+        values = self.encoder(data)
+        return validate_embedding_output(values)
 
 
 @dataclass(frozen=True)
@@ -37,7 +48,8 @@ class ObjectEncoderAdapter:
         fn = getattr(self.model, self.method, None)
         if fn is None or not callable(fn):
             raise TypeError(f"{self.name} does not expose callable '{self.method}'")
-        return fn(data)
+        values = fn(data)
+        return validate_embedding_output(values)
 
 
 @dataclass(frozen=True)
@@ -56,22 +68,36 @@ EXTERNAL_ENCODERS = (
         name="geneformer",
         package="geneformer",
         source_repo="https://github.com/jkobject/geneformer",
-        method="encode",
-        notes="External pretrained rank-based transcriptomic representation; adapter uses the installed API supplied by the caller.",
+        method="caller_supplied",
+        notes="External pretrained rank-based transcriptomic representation; the repository-specific loading/encoding API is supplied by the caller.",
     ),
     ExternalEncoderSpec(
         name="scgpt",
         package="scgpt",
         source_repo="https://github.com/bowang-lab/scGPT",
-        method="encode",
-        notes="External gene/value Transformer representation; adapter boundary intentionally avoids importing optional dependencies.",
+        method="caller_supplied",
+        notes="External gene/value Transformer representation; the repository-specific loading/encoding API is supplied by the caller.",
     ),
     ExternalEncoderSpec(
         name="uce",
         package="uce",
         source_repo="https://github.com/snap-stanford/UCE",
-        method="encode",
+        method="caller_supplied",
         notes="External zero-shot cell representation; caller supplies the repository-specific model wrapper.",
+    ),
+    ExternalEncoderSpec(
+        name="nicheformer",
+        package="nicheformer",
+        source_repo="https://github.com/theislab/nicheformer",
+        method="caller_supplied",
+        notes="Optional single-cell/spatial encoder; callers provide the repository-specific wrapper.",
+    ),
+    ExternalEncoderSpec(
+        name="scimilarity",
+        package="scimilarity",
+        source_repo="https://github.com/Genentech/scimilarity",
+        method="caller_supplied",
+        notes="Retrieval-oriented model; callers provide its repository-specific embedding/search adapter.",
     ),
     ExternalEncoderSpec(
         name="scvi",

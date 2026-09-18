@@ -11,6 +11,7 @@ import random
 import numpy as np
 import torch
 from torch import nn
+from torch.utils.data import Dataset
 
 from .objectives import (
     ObjectiveSchedule,
@@ -50,6 +51,27 @@ class EpochRecord:
     epoch: int
     train_loss: float
     components: dict[str, float]
+
+
+class MappingTensorDataset(Dataset):
+    """Dictionary-backed tensor dataset for reproducible research batches."""
+
+    def __init__(self, tensors: Mapping[str, torch.Tensor]) -> None:
+        if not tensors:
+            raise ValueError("at least one tensor is required")
+        lengths = {int(value.shape[0]) for value in tensors.values() if torch.is_tensor(value)}
+        if len(lengths) != 1:
+            raise ValueError("all dataset tensors must have the same first dimension")
+        if any(not torch.is_tensor(value) or value.ndim == 0 for value in tensors.values()):
+            raise ValueError("dataset values must be non-scalar torch tensors")
+        self.tensors = dict(tensors)
+        self.size = lengths.pop()
+
+    def __len__(self) -> int:
+        return self.size
+
+    def __getitem__(self, index: int) -> dict[str, torch.Tensor]:
+        return {name: value[index] for name, value in self.tensors.items()}
 
 
 class CategoryEncoder:

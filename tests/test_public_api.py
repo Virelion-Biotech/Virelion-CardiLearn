@@ -23,4 +23,20 @@ def test_regression_registry_is_stable():
 
 
 def test_representation_registry_exposes_external_comparison_set():
-    assert available_models("representation") == ("pca", "autoencoder", "scvi", "geneformer", "scgpt", "uce", "cardilearn_research")
+    assert available_models("representation") == ("pca", "autoencoder", "scvi", "geneformer", "scgpt", "uce", "nicheformer", "scimilarity", "cardilearn_research")
+
+
+def test_public_api_exports_are_unique():
+    import cardilearn
+    assert len(cardilearn.__all__) == len(set(cardilearn.__all__))
+
+
+def test_external_adapter_validates_shape():
+    import numpy as np
+    from cardilearn.backbones import CallableEncoderAdapter
+    adapter = CallableEncoderAdapter(
+        name="fixture",
+        encoder=lambda _: np.ones((3, 4)),
+        provenance={"source": "test"},
+    )
+    assert adapter.encode(None).shape == (3, 4)

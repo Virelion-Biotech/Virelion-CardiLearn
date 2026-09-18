@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Mapping
 
 import torch
 from torch.nn import functional as F
@@ -60,6 +59,8 @@ def cosine_alignment_loss(z_a: torch.Tensor, z_b: torch.Tensor, temperature: flo
     """Symmetric InfoNCE for true matched observations only."""
     if z_a.ndim != 2 or z_b.ndim != 2 or z_a.shape != z_b.shape:
         raise ValueError("paired representations must have identical [batch, dim] shapes")
+    if z_a.shape[0] < 2:
+        raise ValueError("contrastive alignment requires at least two matched observations")
     if temperature <= 0:
         raise ValueError("temperature must be positive")
     a = F.normalize(z_a, dim=-1)

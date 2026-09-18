@@ -60,3 +60,25 @@ def test_config_validation_requires_train_only_preprocessing():
     invalid["reproducibility"]["fit_preprocessing_on_train_only"] = False
     with pytest.raises(ConfigError, match="fit_preprocessing_on_train_only"):
         validate_reproducibility_config(invalid)
+
+
+def test_model_registry_manifest_is_immutable(tmp_path):
+    from cardilearn.registry import ModelRegistry
+    registry = ModelRegistry(tmp_path)
+    registry.save_manifest("r1", {"config": "a"})
+    registry.save_manifest("r1", {"config": "a"})
+    import pytest
+    with pytest.raises(FileExistsError):
+        registry.save_manifest("r1", {"config": "b"})
+
+
+def test_model_registry_persists_hashed_artifact_record(tmp_path):
+    from cardilearn.registry import ModelRegistry
+    registry = ModelRegistry(tmp_path)
+    registry.save_manifest("r2", {"config": "a"})
+    artifact = tmp_path / "result.json"
+    artifact.write_text("hello", encoding="utf-8")
+    first = registry.register_artifact("r2", artifact, name="result")
+    second = registry.register_artifact("r2", artifact, name="result")
+    assert first == second
+    assert (tmp_path / "r2" / "artifacts" / "result.json").exists()

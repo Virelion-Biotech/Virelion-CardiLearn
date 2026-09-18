@@ -14,7 +14,6 @@ The implementation is an empirical model, not a scientific validity claim.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Mapping
 
 import torch
 from torch import nn
@@ -208,7 +207,7 @@ class GRNProgramRouter(nn.Module):
         for start in range(0, self.n_genes, self.chunk_size):
             end = min(start + self.chunk_size, self.n_genes)
             weights = torch.exp(self._logits_chunk(gate, start, end) - max_logits.unsqueeze(-1)).to(accum_dtype)
-            programs += torch.einsum("bkg,bgd->bkd", weights, gene_tokens.to(accum_dtype))
+            programs += torch.einsum("bkg,bgd->bkd", weights, gene_tokens[:, start:end].to(accum_dtype))
         programs = programs / denom.clamp_min(torch.finfo(programs.dtype).tiny).unsqueeze(-1)
         program_mass = denom / denom.sum(dim=-1, keepdim=True).clamp_min(torch.finfo(denom.dtype).tiny)
         return programs.to(gene_tokens.dtype), program_mass.to(gene_tokens.dtype)
@@ -321,14 +320,15 @@ class FactorizedNBDecoder(nn.Module):
         if torch.any(~torch.isfinite(library_size)) or torch.any(library_size <= 0):
             raise ValueError("library_size must be finite and positive")
         projected = self.cell_projection(cell_state)
-        log_mu = (
-            projected @ self.gene_projection.T
-            + self.gene_bias.unsqueeze(0)
-            + torch.log(library_size).unsqueeze(-1)
+        gene_logits = projected @ self.gene_projection.T + self.gene_bias.unsqueeze(0)
+        log_proportions = torch.log_softmax(gene_logits, dim=-1)
+        log_mu = torch.clamp(
+            log_proportions + torch.log(library_size).unsqueeze(-1),
+            min=-20.0,
+            max=20.0,
         )
-        log_mu = torch.clamp(log_mu, min=-20.0, max=20.0)
         mu = torch.exp(log_mu)
-        theta = F.softplus(self.log_theta).unsqueeze(0) + 1e-4
+        theta = (F.softplus(self.log_theta).unsqueeze(0) + 1e-4).expand_as(mu)
         return mu, theta
 
 
@@ -508,7 +508,14 @@ class CardiLearnResearch(nn.Module):
         cell_state = torch.cat([z_shared, z_private, context], dim=-1)
         mu, theta = self.decoder(cell_state, library_size)
         masked_hidden = self.masked_cell_projection(cell_state)
-        masked_prediction = masked_hidden @ self.decoder.gene_projection.T + self.decoder.gene_bias.unsqueeze(0)
+        masked_logits = masked_hidden @ self.decoder.gene_projection.T + self.decoder.gene_bias.unsqueeze(0)
+        masked_log_proportions = torch.log_softmax(masked_logits, dim=-1)
+        masked_log_mu = torch.clamp(
+            masked_log_proportions + torch.log(library_size).unsqueeze(-1),
+            min=-20.0,
+            max=20.0,
+        )
+        masked_prediction = F.softplus(masked_log_mu)
         species_logits = None
         if self.species_adversary is not None:
             species_logits = self.species_adversary(self.grl(z_shared))

@@ -47,3 +47,49 @@ def test_grouped_permutation_rejects_inconsistent_group_labels():
     import pytest
     with pytest.raises(ValueError, match="exactly one class label"):
         permutation_null_auroc(z,y,groups=groups,n_permutations=2,n_splits=2)
+
+
+def test_embedding_benchmark_can_aggregate_cell_embeddings_to_biological_groups():
+    import numpy as np
+    from cardilearn.representation_benchmark import aggregate_embeddings_by_group
+    z = np.array([[0.,0.],[1.,0.],[0.,1.],[1.,1.]])
+    y = np.array([0,0,1,1])
+    groups = np.array(["s1","s1","s2","s2"])
+    zg, yg, gg = aggregate_embeddings_by_group(z, groups, y)
+    assert zg.shape == (2, 2)
+    assert yg.tolist() == [0, 1]
+    assert gg.tolist() == ["s1", "s2"]
+
+
+def test_bootstrap_metric_can_resample_biological_groups():
+    import numpy as np
+    from cardilearn.representation_benchmark import bootstrap_metric
+    y = np.array([0, 0, 1, 1, 0, 0])
+    score = np.array([0.1, 0.2, 0.8, 0.9, 0.3, 0.4])
+    groups = np.array(["s1","s1","s2","s2","s3","s3"])
+    result = bootstrap_metric(y, score, groups=groups, n_bootstrap=50, seed=1)
+    assert result["n_valid"] > 0
+    assert result["ci95_low"] <= result["ci95_high"]
+
+
+def test_bootstrap_metric_rejects_mixed_labels_within_biological_group():
+    import numpy as np
+    import pytest
+    from cardilearn.representation_benchmark import bootstrap_metric
+    with pytest.raises(ValueError, match="exactly one target label"):
+        bootstrap_metric(
+            np.array([0, 1, 1, 0]),
+            np.array([0.1, 0.9, 0.8, 0.2]),
+            groups=np.array(["s1", "s1", "s2", "s2"]),
+            n_bootstrap=10,
+        )
+
+
+def test_bootstrap_treats_variable_cell_counts_as_equal_biological_groups():
+    import numpy as np
+    from cardilearn.representation_benchmark import bootstrap_metric
+    y = np.array([0,0,0,1,1])
+    score = np.array([0.1,0.2,0.3,0.8,0.9])
+    groups = np.array(["s1","s1","s1","s2","s2"])
+    result = bootstrap_metric(y, score, groups=groups, n_bootstrap=20, seed=2)
+    assert result["n_valid"] > 0

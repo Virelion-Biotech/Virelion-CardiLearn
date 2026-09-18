@@ -1,4 +1,6 @@
 """Spatial neighborhood encoding primitives for cardiac tissue data."""
+
+# kNN construction uses scipy.cKDTree to avoid materializing an O(n²) distance matrix.
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -16,7 +18,7 @@ class SpatialGraph:
     n_nodes: int
 
     def validate(self) -> None:
-        if self.edge_index.ndim != 2 or tuple(self.edge_index.shape[:1]) != (2,):
+        if self.edge_index.ndim != 2 or self.edge_index.shape[0] != 2:
             raise ValueError("edge_index must have shape [2, edges]")
         if self.edge_index.dtype not in (torch.int32, torch.int64):
             raise ValueError("edge_index must use integer indices")
@@ -64,11 +66,11 @@ def knn_graph(coordinates: np.ndarray, k: int = 8) -> torch.Tensor:
         raise ValueError("k must be in [1, n_nodes-1]")
     if not np.isfinite(values).all():
         raise ValueError("coordinates contain non-finite values")
-    distances = np.sum((values[:, None, :] - values[None, :, :]) ** 2, axis=-1)
-    np.fill_diagonal(distances, np.inf)
-    neighbors = np.argpartition(distances, kth=k - 1, axis=1)[:, :k]
-    order = np.argsort(np.take_along_axis(distances, neighbors, axis=1), axis=1)
-    neighbors = np.take_along_axis(neighbors, order, axis=1)
+    from scipy.spatial import cKDTree
+
+    tree = cKDTree(values)
+    distances, neighbors = tree.query(values, k=k + 1, workers=-1)
+    neighbors = np.asarray(neighbors)[:, 1:]
     src = np.repeat(np.arange(len(values)), k)
     dst = neighbors.reshape(-1)
     return torch.as_tensor(np.stack([src, dst], axis=0), dtype=torch.long)

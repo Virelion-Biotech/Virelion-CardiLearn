@@ -18,9 +18,15 @@ cardilearn/
 │   ├── schema.py
 │   ├── splitting.py
 │   ├── validation.py
-│   └── provenance.py
+│   ├── provenance.py
+│   └── registry.py
 │
 ├── representation
+│   ├── research_model.py
+│   ├── objectives.py
+│   ├── conserved.py
+│   ├── backbones.py
+│   ├── singlecell.py
 │   └── prototype/
 │       ├── model.py
 │       └── losses.py
@@ -48,17 +54,19 @@ cardilearn/
 
 ## Representation model
 
-The current prototype follows:
+The current modular research path follows:
 
 ```text
-expression
-   → gene tokens
-   → learned molecular programs
-   → molecular representation
-   + species / assay context
+counts
+   → gene identity + value encoding
+   → optional conserved-gene identity
+   → memory-bounded gene→program routing
+   → program Transformer / optional Mamba
    → shared + private latent state
-   → biological prediction heads
-   → reconstruction
+   → factorized negative-binomial reconstruction
+   + masked-gene prediction
+   + maturation / injury / cell-type heads
+   + optional species-adversarial head
 ```
 
 The shared latent is intended to capture reusable biological state; the private latent retains context that should not be forced into the shared representation.
@@ -134,3 +142,10 @@ The minimal package does not require PyTorch. Torch-backed research components a
 ## Ecosystem boundary
 
 CardiLearn owns learning and model development. CardiBench owns canonical datasets/splits. CardiEval independently evaluates exported predictions. CardiTrace records provenance across the ecosystem. This separation is intentional: the model should not be the sole judge of its own scientific validity.
+
+
+## Independent evaluation and scale
+
+The research representation is not evaluated by its own reconstruction loss alone. Frozen embeddings are passed to declared downstream probes under the locked biological grouping protocol, with optional aggregation from cell/nucleus to sample before inference. Cross-study and cross-species transfer are evaluated separately. External transcriptomic encoders are accessed through caller-supplied adapters so repository-specific APIs are not assumed.
+
+The high-capacity architecture remains an empirical research implementation. Parameter count, training loss, and software tests are implementation evidence, not biological validation.

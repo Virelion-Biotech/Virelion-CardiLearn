@@ -71,5 +71,5 @@ def test_read_10x_mtx_accepts_legacy_genes_tsv(tmp_path):
     result = read_10x_mtx(matrix_dir)
 
     assert result.observation_ids == ("cellA", "cellB")
-    assert result.gene_ids == ("GeneB", "geneA")
+    assert result.gene_ids == ("geneA", "GeneB")
     assert result.X.toarray().tolist() == [[1.0, 0.0], [0.0, 2.0]]

@@ -103,6 +103,33 @@ def _make_splitter(
     return KFold(n_splits=n_splits, shuffle=True, random_state=seed)
 
 
+
+def aggregate_embeddings_by_group(
+    z: np.ndarray,
+    group: Iterable,
+    y: Iterable,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Aggregate cell/nucleus embeddings to biological groups before evaluation."""
+    values = np.asarray(z, dtype=np.float32)
+    groups = np.asarray(list(group), dtype=object)
+    labels = np.asarray(list(y))
+    if values.ndim != 2 or len(values) != len(groups) or len(values) != len(labels):
+        raise ValueError("z, group, and y must have matching lengths and z must be 2-D")
+    if not np.isfinite(values).all():
+        raise ValueError("embeddings contain non-finite values")
+    frame = pd.DataFrame({"group": groups, "row": np.arange(len(groups))})
+    unique_groups = pd.unique(frame["group"]).tolist()
+    rows = []
+    group_labels = []
+    for value in unique_groups:
+        indices = frame.index[frame["group"] == value].to_numpy()
+        label_values = labels[indices]
+        if np.unique(label_values).size != 1:
+            raise ValueError("each biological group must have exactly one target label")
+        rows.append(values[indices].mean(axis=0))
+        group_labels.append(label_values[0])
+    return np.asarray(rows, dtype=np.float32), np.asarray(group_labels), np.asarray(unique_groups, dtype=object)
+
 def benchmark_embedding(
     z: np.ndarray,
     y: Iterable,
@@ -113,12 +140,19 @@ def benchmark_embedding(
     groups: Iterable | None = None,
     n_splits: int = 5,
     seed: int = 42,
+    aggregate_by_group: bool = False,
 ) -> BenchmarkSummary:
     labels = np.asarray(list(y))
     if labels.ndim != 1:
         raise ValueError("y must be one-dimensional")
     embeddings = _validate_embeddings(z, len(labels))
     group_values = None if groups is None else np.asarray(list(groups), dtype=object)
+    if aggregate_by_group:
+        if group_values is None:
+            raise ValueError("aggregate_by_group requires groups")
+        embeddings, labels, group_values = aggregate_embeddings_by_group(
+            embeddings, group_values, labels
+        )
     if group_values is not None and len(group_values) != len(labels):
         raise ValueError("groups and y must have identical lengths")
     if task not in {"classification", "regression"}:
@@ -283,7 +317,8 @@ def bootstrap_metric(
     metric: str = "auroc",
     n_bootstrap: int = 2000,
     seed: int = 42,
-) -> dict[str, float | int | list[float]]:
+    groups: Iterable | None = None,
+) -> dict[str, float | int]:
     y = np.asarray(list(y_true))
     score = np.asarray(list(y_score), dtype=float)
     if y.size == 0:
@@ -292,6 +327,23 @@ def bootstrap_metric(
         raise ValueError("y_score contains non-finite values")
     if y.shape != score.shape:
         raise ValueError("y_true and y_score must have matching shapes")
+    group_values = None if groups is None else np.asarray(list(groups), dtype=object)
+    if group_values is not None:
+        if group_values.shape != y.shape:
+            raise ValueError("groups must have one value per observation")
+        unique_groups = pd.unique(group_values)
+        group_y = []
+        group_score = []
+        for group in unique_groups:
+            indices = np.flatnonzero(group_values == group)
+            labels = y[indices]
+            if np.unique(labels).size != 1:
+                raise ValueError("each biological bootstrap group must have exactly one target label")
+            group_y.append(labels[0])
+            group_score.append(float(np.mean(score[indices])))
+        y = np.asarray(group_y, dtype=y.dtype)
+        score = np.asarray(group_score, dtype=float)
+        group_values = None
     if n_bootstrap < 1:
         raise ValueError("n_bootstrap must be positive")
     rng = np.random.default_rng(seed)
@@ -304,6 +356,8 @@ def bootstrap_metric(
                 continue
             values.append(float(roc_auc_score(sample_y, score[indices])))
         elif metric == "auprc":
+            if len(np.unique(sample_y)) < 2:
+                continue
             values.append(float(average_precision_score(sample_y, score[indices])))
         else:
             raise ValueError("metric must be 'auroc' or 'auprc'")
