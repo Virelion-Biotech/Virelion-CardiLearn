@@ -27,7 +27,9 @@ try:  # pragma: no cover - depends on optional torch installation
     from .objectives import ObjectiveSchedule, ObjectiveStage, ObjectiveWeights, cosine_alignment_loss, masked_log1p_loss, negative_binomial_nll, vicreg_loss
     from .conserved import ConservedGeneIdentity, GeneGroupMap, functional_group_pool, validate_gene_group_map
     from .spatial import NeighborhoodAggregator, SpatialGraph, knn_graph
-except ImportError:
+except ModuleNotFoundError as exc:
+    if exc.name != "torch":
+        raise
     ObjectiveSchedule = None
     ObjectiveStage = None
     ObjectiveWeights = None
@@ -45,7 +47,9 @@ except ImportError:
 
 try:  # pragma: no cover - depends on optional torch installation
     from .multimodal import CardiLearnX, CardiacFusionCore, SignalPatchEncoder, modality_dropout
-except ImportError:
+except ModuleNotFoundError as exc:
+    if exc.name != "torch":
+        raise
     CardiLearnX = None
     CardiacFusionCore = None
     SignalPatchEncoder = None
@@ -53,7 +57,9 @@ except ImportError:
 
 try:  # pragma: no cover - depends on optional torch installation
     from .torch_training import CategoryEncoder, TorchTrainConfig, fit_research_model, load_checkpoint, save_checkpoint
-except ImportError:
+except ModuleNotFoundError as exc:
+    if exc.name != "torch":
+        raise
     CategoryEncoder = None
     TorchTrainConfig = None
     fit_research_model = None
@@ -62,7 +68,9 @@ except ImportError:
 
 try:  # pragma: no cover - depends on optional torch installation
     from .research_model import CardiLearnResearch, FactorizedNBDecoder, GeneValueEncoder, GRNProgramRouter, ProgramBackbone
-except ImportError:
+except ModuleNotFoundError as exc:
+    if exc.name != "torch":
+        raise
     CardiLearnResearch = None
     FactorizedNBDecoder = None
     GeneValueEncoder = None
