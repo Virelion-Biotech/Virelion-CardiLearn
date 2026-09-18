@@ -68,6 +68,13 @@ def _binary_train_mapping(values: pd.Series) -> dict[str, int]:
     labels = sorted(values.astype(str).unique().tolist())
     if len(labels) != 2:
         raise ValueError(f"injury head is binary, but training contains {len(labels)} classes: {labels}")
+    normalized = {label: label.strip().lower() for label in labels}
+    positive_terms = {"mi", "injured", "injury", "infarct", "infarction", "ischemia", "ischaemia"}
+    negative_terms = {"sham", "control", "uninjured", "healthy", "naive", "vehicle"}
+    positive = [label for label in labels if normalized[label] in positive_terms]
+    negative = [label for label in labels if normalized[label] in negative_terms]
+    if len(positive) == 1 and len(negative) == 1:
+        return {negative[0]: 0, positive[0]: 1}
     return {label: index for index, label in enumerate(labels)}
 
 
