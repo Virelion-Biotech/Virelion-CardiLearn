@@ -381,7 +381,23 @@ def combine_series(parsed: dict[str, pd.Series], expected: list[str]) -> pd.Data
             halt("Per-sample raw count files do not contain identical gene sets")
     matrix = pd.concat([parsed[g.upper()] for g in expected], axis=1)
     matrix.columns = expected
-    return normalize_genes(matrix.reset_index().rename(columns={"index": "gene_id"}))
+    matrix.index.name = "gene_id"
+
+    if matrix.index.name != "gene_id":
+        halt("Internal parser invariant failed: raw gene index was not named gene_id")
+
+    if list(matrix.columns) != expected:
+        halt("Internal parser invariant failed: assembled sample order differs from manifest")
+
+    normalized = normalize_genes(matrix.reset_index())
+
+    if list(normalized.columns) != ["gene_id"] + expected:
+        halt(
+            "Internal parser invariant failed: normalized matrix columns do not "
+            "match [gene_id] + manifest samples"
+        )
+
+    return normalized
 
 
 def acquire_counts(acc: str, rec: dict[str, object], samples: list[dict[str, object]]) -> tuple[pd.DataFrame, dict[str, object]]:
@@ -431,6 +447,8 @@ def acquire_counts(acc: str, rec: dict[str, object], samples: list[dict[str, obj
                         "downloaded_sources": downloaded,
                         "candidate_audit": audit,
                     }
+            except Step3Halt:
+                raise
             except Exception as exc:
                 audit.append({"url": url, "status": "rejected", "reason": f"{type(exc).__name__}: {exc}"})
 
