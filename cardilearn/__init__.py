@@ -4,12 +4,10 @@ __version__ = "0.4.1"
 
 from .backbones import EXTERNAL_ENCODERS, CallableEncoderAdapter, EncoderAdapter, ExternalEncoderSpec, known_external_encoder_names, wrap_object
 from .benchmark_protocol import BenchmarkSpec, compare_seeded_scores, rank_models, summarize_repeated_scores
-from .conserved import ConservedGeneIdentity, GeneGroupMap, functional_group_pool, validate_gene_group_map
 from .config_loader import ConfigError, load_yaml_config, validate_reproducibility_config
 from .dataset_card import DatasetCard
 from .fusion import align_modalities, concatenate_embeddings
 from .modalities import OmicsMatrix, Waveform
-from .objectives import ObjectiveSchedule, ObjectiveStage, ObjectiveWeights, cosine_alignment_loss, masked_log1p_loss, negative_binomial_nll, vicreg_loss
 from .registry import ModelRegistry
 from .reproducibility import (
     ReproducibilityManifest,
@@ -21,10 +19,29 @@ from .reproducibility import (
     make_manifest,
     save_manifest,
 )
-from .spatial import NeighborhoodAggregator, SpatialGraph, knn_graph
 from .schema import DatasetSpec, FeatureManifest
 from .trajectory import TemporalSplit, forward_group_split, trajectory_spearman
 from .validation import IntegrityReport, validate_dataset
+
+try:  # pragma: no cover - depends on optional torch installation
+    from .objectives import ObjectiveSchedule, ObjectiveStage, ObjectiveWeights, cosine_alignment_loss, masked_log1p_loss, negative_binomial_nll, vicreg_loss
+    from .conserved import ConservedGeneIdentity, GeneGroupMap, functional_group_pool, validate_gene_group_map
+    from .spatial import NeighborhoodAggregator, SpatialGraph, knn_graph
+except ImportError:
+    ObjectiveSchedule = None
+    ObjectiveStage = None
+    ObjectiveWeights = None
+    cosine_alignment_loss = None
+    masked_log1p_loss = None
+    negative_binomial_nll = None
+    vicreg_loss = None
+    ConservedGeneIdentity = None
+    GeneGroupMap = None
+    functional_group_pool = None
+    validate_gene_group_map = None
+    NeighborhoodAggregator = None
+    SpatialGraph = None
+    knn_graph = None
 
 try:  # pragma: no cover - depends on optional torch installation
     from .multimodal import CardiLearnX, CardiacFusionCore, SignalPatchEncoder, modality_dropout
