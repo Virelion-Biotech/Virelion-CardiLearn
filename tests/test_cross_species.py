@@ -100,7 +100,7 @@ def test_temporal_forward_split_is_group_safe():
 
 def test_spatial_knn_and_neighbor_aggregation():
     import numpy as np
-    import torch
+    torch = pytest.importorskip("torch")
     from cardilearn.spatial import NeighborhoodAggregator, knn_graph
     coords = np.array([[0.,0.],[1.,0.],[0.,1.],[3.,3.]])
     edges = knn_graph(coords, k=1)
