@@ -41,6 +41,7 @@ class NeighborhoodAggregator(nn.Module):
             raise ValueError("x must have shape [nodes, features]")
         graph = SpatialGraph(edge_index=edge_index, n_nodes=x.shape[0])
         graph.validate()
+        edge_index = edge_index.to(device=x.device)
         src, dst = edge_index.long()
         messages = self.projection(x[src])
         aggregate = torch.zeros_like(x)
