@@ -51,7 +51,7 @@ def build_model(task: str, name: str, features) -> Any:
         raise ValueError(f"unsupported task: {task}")
 
     if name not in estimators:
-        raise KeyError(f"unknown {task} model: {name}; available={sorted(estimators) + ['mlp', 'cardilearn_research']}")
+        raise KeyError(f"unknown {task} model: {name}; available={sorted(estimators) + ['mlp']}")
     return Pipeline([("preprocess", preprocessor), ("model", estimators[name])])
 
 
@@ -61,7 +61,6 @@ def available_models(task: str) -> tuple[str, ...]:
             "logistic_regression",
             "hist_gradient_boosting",
             "mlp",
-            "cardilearn_research",
         )
     if task == "regression":
         return ("ridge", "hist_gradient_boosting", "mlp")
