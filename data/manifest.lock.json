@@ -1,0 +1,405 @@
+{
+  "schema_version": "1.0",
+  "artifact": "data/manifest.lock.json",
+  "purpose": "Step-1 metadata lock for cardiac transcriptomic validation. This file locks cohort eligibility, biological-unit grouping, study-family boundaries, and explicit exclusions. Raw matrices are acquired and hashed only after this metadata lock.",
+  "lock_policy": {
+    "inclusion": "Only publicly deposited cardiac transcriptomic cohorts with explicit condition metadata and defensible biological-unit grouping are included.",
+    "biological_unit": "A biological unit is the independently sampled animal/heart/declared biological replicate. Cells or sequencing libraries are never independent biological units by default.",
+    "technical_replicates": "Technical or paired libraries are nested under one biological unit.",
+    "pooled_libraries": "Pooled-heart/litter libraries are not represented as individual animals and are excluded from the strict biological-replicate benchmark.",
+    "study_family": "A complete experimental program is held out as one family; accession count is never substituted for biological independence.",
+    "raw_data_lock": "This artifact does not claim raw matrices are downloaded or hashed. Those operations require a separate acquisition step."
+  },
+  "eligible_tracks": {
+    "strict_biological_replicate_benchmark": [
+      {
+        "accession": "GSE183272",
+        "species": "Mus musculus",
+        "assay": "bulk_RNA_seq",
+        "biological_unit_level": "individual_sample",
+        "study_family_id": "GSE183272",
+        "condition_levels": [
+          "sham",
+          "MI"
+        ],
+        "timepoints_days": [
+          2,
+          4,
+          7
+        ],
+        "regions": [
+          "heart"
+        ],
+        "sample_count": 30,
+        "independent_units": 30,
+        "design": "5 sham + 5 MI at each of D2, D4, D7",
+        "samples": [
+          "GSM5554375",
+          "GSM5554376",
+          "GSM5554377",
+          "GSM5554378",
+          "GSM5554379",
+          "GSM5554380",
+          "GSM5554381",
+          "GSM5554382",
+          "GSM5554383",
+          "GSM5554384",
+          "GSM5554385",
+          "GSM5554386",
+          "GSM5554387",
+          "GSM5554388",
+          "GSM5554389",
+          "GSM5554390",
+          "GSM5554391",
+          "GSM5554392",
+          "GSM5554393",
+          "GSM5554394",
+          "GSM5554395",
+          "GSM5554396",
+          "GSM5554397",
+          "GSM5554398",
+          "GSM5554399",
+          "GSM5554400",
+          "GSM5554401",
+          "GSM5554402",
+          "GSM5554403",
+          "GSM5554404"
+        ],
+        "evidence_urls": [
+          "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE183272"
+        ]
+      },
+      {
+        "accession": "GSE236374",
+        "species": "Mus musculus",
+        "assay": "bulk_RNA_seq",
+        "biological_unit_level": "individual_mouse",
+        "study_family_id": "GSE236374",
+        "condition_levels": [
+          "sham",
+          "MI"
+        ],
+        "timepoints_days": [
+          7,
+          28
+        ],
+        "regions": [
+          "heart"
+        ],
+        "sample_count": 9,
+        "independent_units": 9,
+        "design": "3 sham + 3 MI day 7 + 3 MI day 28; nine 8-week-old male C57BL/6JR mice",
+        "samples": [
+          "GSM7528854",
+          "GSM7528855",
+          "GSM7528856",
+          "GSM7528857",
+          "GSM7528858",
+          "GSM7528859",
+          "GSM7528860",
+          "GSM7528861",
+          "GSM7528862"
+        ],
+        "evidence_urls": [
+          "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE236374"
+        ]
+      },
+      {
+        "accession": "GSE232259",
+        "species": "Mus musculus",
+        "assay": "bulk_RNA_seq",
+        "biological_unit_level": "individual_sample",
+        "study_family_id": "GSE232259",
+        "condition_levels": [
+          "sham",
+          "MI"
+        ],
+        "timepoints_days": [
+          7
+        ],
+        "regions": [
+          "left_ventricle"
+        ],
+        "sample_count": 12,
+        "independent_units": 12,
+        "design": "6 sham + 6 MI at 7 days post-surgery",
+        "samples": [
+          "GSM7324726",
+          "GSM7324727",
+          "GSM7324728",
+          "GSM7324729",
+          "GSM8293884",
+          "GSM8293885",
+          "GSM8293886",
+          "GSM8293887",
+          "GSM8293888",
+          "GSM8293889",
+          "GSM8293890",
+          "GSM8293891"
+        ],
+        "evidence_urls": [
+          "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE232259"
+        ]
+      },
+      {
+        "accession": "GSE52313",
+        "species": "Mus musculus",
+        "assay": "long_RNA_seq",
+        "biological_unit_level": "individual_sample",
+        "study_family_id": "GSE52313",
+        "condition_levels": [
+          "sham",
+          "MI"
+        ],
+        "timepoints_days": [
+          14
+        ],
+        "regions": [
+          "heart",
+          "infarct_border_zone_context"
+        ],
+        "sample_count": 8,
+        "independent_units": 8,
+        "design": "4 sham + 4 MI; adult mice; tissue collected 2 weeks after surgery",
+        "samples": [
+          "GSM1262762",
+          "GSM1262763",
+          "GSM1262764",
+          "GSM1262765",
+          "GSM1262766",
+          "GSM1262767",
+          "GSM1262768",
+          "GSM1262769"
+        ],
+        "evidence_urls": [
+          "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE52313"
+        ]
+      },
+      {
+        "accession": "GSE186875",
+        "species": "Mus musculus",
+        "assay": "bulk_RNA_seq",
+        "biological_unit_level": "individual_mouse",
+        "study_family_id": "GSE186875",
+        "condition_levels": [
+          "sham_vehicle",
+          "MI_vehicle"
+        ],
+        "timepoints_days": null,
+        "regions": [
+          "myocardium"
+        ],
+        "sample_count": 6,
+        "independent_units": 6,
+        "design": "vehicle-only subset: 3 sham + 3 MI; weekly prednisone arms excluded",
+        "excluded_samples": [
+          "GSM5662948",
+          "GSM5662949",
+          "GSM5662950",
+          "GSM5662954",
+          "GSM5662955",
+          "GSM5662956"
+        ],
+        "samples": [
+          "GSM5662945",
+          "GSM5662946",
+          "GSM5662947",
+          "GSM5662951",
+          "GSM5662952",
+          "GSM5662953"
+        ],
+        "evidence_urls": [
+          "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE186875"
+        ]
+      },
+      {
+        "accession": "GSE229147",
+        "species": "Rattus norvegicus",
+        "assay": "bulk_RNA_seq",
+        "biological_unit_level": "biological_replicate",
+        "study_family_id": "GSE229147",
+        "condition_levels": [
+          "sham",
+          "MI"
+        ],
+        "timepoints_days": [
+          28
+        ],
+        "regions": [
+          "heart"
+        ],
+        "sample_count": 6,
+        "independent_units": 6,
+        "design": "3 sham + 3 MI biological replicates; each biological replicate has two sequencing libraries; DAPA arms excluded",
+        "technical_library_groups": {
+          "sham_1": [
+            "GSM7154228"
+          ],
+          "sham_2": [
+            "GSM7154229"
+          ],
+          "sham_3": [
+            "GSM7154230"
+          ],
+          "MI_1": [
+            "GSM7154231"
+          ],
+          "MI_2": [
+            "GSM7154232"
+          ],
+          "MI_3": [
+            "GSM7154233"
+          ]
+        },
+        "excluded_samples": [
+          "GSM7154234",
+          "GSM7154235",
+          "GSM7154236"
+        ],
+        "samples": [
+          "GSM7154228",
+          "GSM7154229",
+          "GSM7154230",
+          "GSM7154231",
+          "GSM7154232",
+          "GSM7154233"
+        ],
+        "evidence_urls": [
+          "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE229147"
+        ]
+      }
+    ],
+    "specialized_cellular_validation": [
+      {
+        "accession": "GSE132880",
+        "species": "Mus musculus",
+        "assay": "scRNA_seq",
+        "biological_unit_level": "individual_heart",
+        "study_family_id": "GSE132880",
+        "condition_levels": [
+          "healthy",
+          "MI"
+        ],
+        "timepoints_days": [
+          7
+        ],
+        "regions": [
+          "cardiac_endothelium"
+        ],
+        "sample_count": 8,
+        "independent_units": 8,
+        "design": "4 healthy + 4 seven-day MI adult mouse hearts; FACS-sorted cardiac endothelial cells",
+        "samples": [
+          "GSM3895566",
+          "GSM3895567",
+          "GSM3895568",
+          "GSM3895569",
+          "GSM3895570",
+          "GSM3895571",
+          "GSM3895572",
+          "GSM3895573"
+        ],
+        "benchmark_role": "endothelial injury/cell-state validation, not whole-heart representation benchmark",
+        "evidence_urls": [
+          "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE132880"
+        ]
+      },
+      {
+        "accession": "GSE214611",
+        "species": "Mus musculus",
+        "assay": "snRNA_seq",
+        "biological_unit_level": "declared_biological_replicate",
+        "study_family_id": "GSE214611",
+        "condition_levels": [
+          "MI"
+        ],
+        "timepoints_days": [
+          0,
+          1,
+          3,
+          7
+        ],
+        "regions": [
+          "left_ventricle"
+        ],
+        "sample_count": 15,
+        "independent_units": 15,
+        "design": "single-nucleus arm; biological replicates explicitly identified in GEO; used for temporal/border-zone validation",
+        "samples": [
+          "GSM6613059",
+          "GSM6613060",
+          "GSM6613061",
+          "GSM6613062",
+          "GSM6613063",
+          "GSM6613064",
+          "GSM6613065",
+          "GSM6613066",
+          "GSM6613067",
+          "GSM6613068",
+          "GSM6613069",
+          "GSM6613070",
+          "GSM6613071",
+          "GSM6613072",
+          "GSM6613073",
+          "GSM6613074",
+          "GSM6613075",
+          "GSM6613076"
+        ],
+        "benchmark_role": "temporal and anatomical validation; not primary sham-vs-MI benchmark because the snRNA component is MI-focused",
+        "evidence_urls": [
+          "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE214611"
+        ]
+      }
+    ]
+  },
+  "excluded_from_strict_lock": [
+    {
+      "accession": "GSE153480",
+      "reason": "Primary paper reports pooling of 8–12 ventricular samples from the same litter before library preparation; library is therefore a pooled biological unit, not an individual animal.",
+      "use": "representation/temporal context only"
+    },
+    {
+      "accession": "GSE130699",
+      "reason": "Neonatal P1/P8 MI/sham experiment uses pooled ventricular tissue across multiple hearts for the sequencing libraries; it is not an individual-animal replicate dataset.",
+      "use": "representation/temporal context only"
+    },
+    {
+      "accession": "GSE185289",
+      "reason": "56 GEO libraries are present, but the current public metadata inspected here does not establish a complete GSM→animal mapping robustly enough for a strict biological-unit lock. No animal identity is inferred from sample-name strings.",
+      "use": "regeneration/large-mammal contextual validation after explicit animal mapping is recovered"
+    },
+    {
+      "accession": "GSE217494",
+      "reason": "Human CITE-seq is valuable, but exact heart/donor↔GEO-library mapping and paired GEX/ADT relationships must be reconciled before strict patient-level locking.",
+      "use": "human translational validation after complete source reconciliation"
+    }
+  ],
+  "cohort_accounting": {
+    "strict_family_count": 6,
+    "strict_accessions": [
+      "GSE183272",
+      "GSE236374",
+      "GSE232259",
+      "GSE52313",
+      "GSE186875",
+      "GSE229147"
+    ],
+    "strict_species": [
+      "Mus musculus",
+      "Rattus norvegicus"
+    ],
+    "strict_biological_units": 71,
+    "note": "The unit total is an inventory count across studies, not a claim that all 71 are exchangeable observations. Study, species, timepoint, tissue and assay remain explicit factors."
+  },
+  "acquisition_requirements": {
+    "before_raw_lock": [
+      "download raw/processed expression from the accession-specific GEO/SRA source",
+      "record SHA-256 for every source file",
+      "verify expression identifiers against the accession sample list",
+      "verify one biological-unit-to-library mapping",
+      "verify count-scale semantics before negative-binomial training",
+      "run structural and biological QC before model benchmarking"
+    ],
+    "fail_closed": "Any mismatch, missing file, ambiguous biological-unit relationship, or unexpected expression scale blocks the cohort from the locked analysis set."
+  }
+}
