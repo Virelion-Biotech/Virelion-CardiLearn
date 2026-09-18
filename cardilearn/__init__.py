@@ -28,7 +28,6 @@ except ImportError:
     CardiLearnX = None
     CardiacFusionCore = None
     SignalPatchEncoder = None
-    cosine_alignment_loss = None
     modality_dropout = None
 
 try:  # pragma: no cover - depends on optional torch installation
