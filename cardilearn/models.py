@@ -12,12 +12,26 @@ from .preprocessing import build_preprocessor
 
 
 def build_model(task: str, name: str, features) -> Any:
-    """Build a reproducible preprocessing + estimator pipeline."""
+    if name in {"cardilearn", "cardilearn_research"}:
+        if task != "representation":
+            raise ValueError("CardiLearn research backbones expose representations; use a task head for supervised evaluation")
+        try:
+            from .research_model import CardiLearnResearch
+        except ImportError as exc:
+            raise ImportError("install the 'torch' extra to use the CardiLearn research model") from exc
+        if not hasattr(features, "shape"):
+            raise TypeError("features must expose a shape")
+        n_genes = int(features.shape[1])
+        return CardiLearnResearch(
+            n_genes=n_genes,
+            n_species=1,
+            n_assays=1,
+            n_cell_types=2,
+        )
+
     if name == "mlp":
         if task not in {"classification", "regression"}:
             raise ValueError(f"unsupported task: {task}")
-        # Neural baseline performs its own numeric scaling; categorical columns must be
-        # represented upstream for this first version.
         if any(features[c].dtype == "object" for c in features.columns):
             raise ValueError("mlp requires numeric features; encode categorical variables first")
         return build_neural_model(task)
@@ -43,7 +57,13 @@ def build_model(task: str, name: str, features) -> Any:
 
 def available_models(task: str) -> tuple[str, ...]:
     if task == "classification":
-        return ("logistic_regression", "hist_gradient_boosting", "mlp")
+        return (
+            "logistic_regression",
+            "hist_gradient_boosting",
+            "mlp",
+        )
     if task == "regression":
         return ("ridge", "hist_gradient_boosting", "mlp")
+    if task == "representation":
+        return ("pca", "autoencoder", "scvi", "geneformer", "scgpt", "uce", "cardilearn_research")
     raise ValueError(f"unsupported task: {task}")

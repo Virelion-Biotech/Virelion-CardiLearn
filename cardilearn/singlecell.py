@@ -3,11 +3,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 
 def load_anndata(path: str | Path):
-    """Load an .h5ad file through the optional bioinformatics extra."""
     try:
         import anndata as ad
     except ImportError as exc:
@@ -16,7 +16,6 @@ def load_anndata(path: str | Path):
 
 
 def obs_table(adata) -> pd.DataFrame:
-    """Return observation metadata with a stable sample_id column."""
     table = adata.obs.copy()
     table = table.reset_index(names="sample_id")
     if table["sample_id"].duplicated().any():
@@ -24,12 +23,27 @@ def obs_table(adata) -> pd.DataFrame:
     return table
 
 
-def pseudobulk_counts(adata, *, group_column: str, layer: str | None = None) -> pd.DataFrame:
-    """Aggregate expression counts by biological group, preserving group identity."""
+def pseudobulk_counts(
+    adata,
+    *,
+    group_column: str,
+    layer: str | None = None,
+) -> pd.DataFrame:
+    """Aggregate counts by biological group without densifying the full matrix."""
     if group_column not in adata.obs:
         raise KeyError(f"missing AnnData obs column: {group_column}")
     matrix = adata.layers[layer] if layer else adata.X
-    matrix = matrix.toarray() if hasattr(matrix, "toarray") else matrix
-    frame = pd.DataFrame(matrix, columns=adata.var_names, index=adata.obs.index)
-    frame[group_column] = adata.obs[group_column].to_numpy()
-    return frame.groupby(group_column, sort=False).sum(numeric_only=True).reset_index()
+    groups = pd.Series(adata.obs[group_column].astype(str).to_numpy(), name=group_column)
+    codes, uniques = pd.factorize(groups, sort=False)
+    if hasattr(matrix, "tocsr"):
+        sparse_matrix = matrix.tocsr()
+        indicator = np.zeros((len(uniques), sparse_matrix.shape[0]), dtype=np.float32)
+        indicator[codes, np.arange(len(codes))] = 1.0
+        aggregated = indicator @ sparse_matrix
+        aggregated = np.asarray(aggregated)
+    else:
+        dense = np.asarray(matrix)
+        aggregated = np.zeros((len(uniques), dense.shape[1]), dtype=np.float64)
+        for code in range(len(uniques)):
+            aggregated[code] = dense[codes == code].sum(axis=0)
+    return pd.DataFrame(aggregated, index=uniques.astype(str), columns=adata.var_names).reset_index(names=group_column)
