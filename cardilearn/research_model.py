@@ -20,6 +20,8 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+from .conserved import ConservedGeneIdentity
+
 
 class GradientReversalFunction(torch.autograd.Function):
     @staticmethod
@@ -71,6 +73,8 @@ class GeneValueEncoder(nn.Module):
         *,
         value_style: str = "continuous",
         dropout: float = 0.1,
+        conserved_group_ids: torch.Tensor | None = None,
+        n_conserved_groups: int | None = None,
     ) -> None:
         super().__init__()
         if n_genes < 1 or dim < 1:
@@ -82,6 +86,15 @@ class GeneValueEncoder(nn.Module):
         self.value_style = value_style
         self.gene_embedding = nn.Parameter(torch.empty(n_genes, dim))
         self.mask_embedding = nn.Parameter(torch.empty(1, 1, dim))
+        self.conserved_identity = None
+        if conserved_group_ids is not None:
+            if n_conserved_groups is None:
+                raise ValueError("n_conserved_groups is required with conserved_group_ids")
+            self.conserved_identity = ConservedGeneIdentity(
+                n_genes, dim, conserved_group_ids, n_conserved_groups
+            )
+        elif n_conserved_groups is not None:
+            raise ValueError("conserved_group_ids is required with n_conserved_groups")
         nn.init.normal_(self.gene_embedding, mean=0.0, std=0.02)
         nn.init.normal_(self.mask_embedding, mean=0.0, std=0.02)
         self.value_projection = nn.Sequential(
@@ -102,7 +115,10 @@ class GeneValueEncoder(nn.Module):
             values = torch.log1p(counts)
         else:
             values = fractional_rank(counts)
-        tokens = self.gene_embedding.unsqueeze(0) + self.value_projection(values.unsqueeze(-1))
+        identity = self.gene_embedding
+        if self.conserved_identity is not None:
+            identity = identity + self.conserved_identity()
+        tokens = identity.unsqueeze(0) + self.value_projection(values.unsqueeze(-1))
         if masked is not None:
             if masked.shape != counts.shape:
                 raise ValueError("masked must have the same shape as counts")
