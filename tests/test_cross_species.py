@@ -83,3 +83,28 @@ def test_summarize_transfer_averages_numeric_metrics():
     ]
     summary = summarize_transfer(results)
     assert summary == {"auroc": 0.8, "balanced_accuracy": 0.7}
+
+
+def test_temporal_forward_split_is_group_safe():
+    import pandas as pd
+    from cardilearn.trajectory import forward_group_split
+    frame = pd.DataFrame({
+        "sample_id": ["a1","a2","b1","b2","c1","c2","d1","d2"],
+        "subject": ["a","a","b","b","c","c","d","d"],
+        "time": ["2020-01-01","2020-02-01","2020-03-01","2020-04-01","2020-05-01","2020-06-01","2020-07-01","2020-08-01"],
+    })
+    split = forward_group_split(frame,time_column="time",group_column="subject",validation_fraction=0.25,test_fraction=0.25)
+    assert set(split.train_indices).isdisjoint(split.test_indices)
+    assert set(split.validation_indices).isdisjoint(split.test_indices)
+
+
+def test_spatial_knn_and_neighbor_aggregation():
+    import numpy as np
+    import torch
+    from cardilearn.spatial import NeighborhoodAggregator, knn_graph
+    coords = np.array([[0.,0.],[1.,0.],[0.,1.],[3.,3.]])
+    edges = knn_graph(coords, k=1)
+    assert edges.shape == (2, 4)
+    x = torch.randn(4, 8)
+    y = NeighborhoodAggregator(8)(x, edges)
+    assert y.shape == x.shape
