@@ -36,6 +36,13 @@ For representation-learning evaluation, use `configs/representation_benchmark_v1
 
 The repository also exposes Python model/training APIs. The prototype model should be used for lightweight software testing where supported by the training scripts.
 
+
+### Colab real-data validation
+
+Use the `notebooks/CardiLearn_v0_5_RealData_Validation_Colab.ipynb` notebook for the locked T4 workflow. It covers sparse single-cell/single-nucleus loading, hierarchy-safe study-family splitting, train-only gene selection, CardiLearnResearch training, frozen sample-level embeddings, PCA/autoencoder baselines, bootstrap/permutation statistics, and provenance export.
+
+The notebook requires a user-supplied locked dataset bundle; it does not invent or silently resolve ambiguous biological metadata. Large raw datasets and model checkpoints remain local to the Colab run unless the optional lightweight results push is enabled.
+
 ## Inputs and outputs
 
 **Inputs:** transcriptomic gene/value matrices, sample metadata and biological grouping labels, task targets, model/training configuration, and benchmark definitions.
