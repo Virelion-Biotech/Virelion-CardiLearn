@@ -28,8 +28,16 @@ except ImportError:
     CardiLearnX = None
     CardiacFusionCore = None
     SignalPatchEncoder = None
-    cosine_alignment_loss = None
     modality_dropout = None
+
+try:  # pragma: no cover - depends on optional torch installation
+    from .torch_training import CategoryEncoder, TorchTrainConfig, fit_research_model, load_checkpoint, save_checkpoint
+except ImportError:
+    CategoryEncoder = None
+    TorchTrainConfig = None
+    fit_research_model = None
+    load_checkpoint = None
+    save_checkpoint = None
 
 try:  # pragma: no cover - depends on optional torch installation
     from .research_model import CardiLearnResearch, FactorizedNBDecoder, GeneValueEncoder, GRNProgramRouter, ProgramBackbone
@@ -82,4 +90,5 @@ __all__ = [
     "validate_dataset",
     "validate_reproducibility_config",
     "wrap_object",
+    "CategoryEncoder", "TorchTrainConfig", "fit_research_model", "load_checkpoint", "save_checkpoint",
 ]
