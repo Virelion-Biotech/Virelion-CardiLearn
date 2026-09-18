@@ -207,7 +207,7 @@ class GRNProgramRouter(nn.Module):
         for start in range(0, self.n_genes, self.chunk_size):
             end = min(start + self.chunk_size, self.n_genes)
             weights = torch.exp(self._logits_chunk(gate, start, end) - max_logits.unsqueeze(-1)).to(accum_dtype)
-            programs += torch.einsum("bkg,bgd->bkd", weights, gene_tokens.to(accum_dtype))
+            programs += torch.einsum("bkg,bgd->bkd", weights, gene_tokens[:, start:end].to(accum_dtype))
         programs = programs / denom.clamp_min(torch.finfo(programs.dtype).tiny).unsqueeze(-1)
         program_mass = denom / denom.sum(dim=-1, keepdim=True).clamp_min(torch.finfo(denom.dtype).tiny)
         return programs.to(gene_tokens.dtype), program_mass.to(gene_tokens.dtype)
