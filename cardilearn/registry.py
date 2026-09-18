@@ -60,12 +60,25 @@ class ModelRegistry:
         manifest_path = self.root / run_id / "manifest.json"
         if not manifest_path.exists():
             raise FileNotFoundError(f"run manifest does not exist: {manifest_path}")
+        artifact_name = (name or artifact.name).strip()
+        if not artifact_name or Path(artifact_name).name != artifact_name:
+            raise ValueError("artifact name must be a non-empty filename without path separators")
         record = {
-            "name": name or artifact.name,
+            "name": artifact_name,
             "path": str(artifact),
             "size_bytes": artifact.stat().st_size,
             "sha256": file_sha256(artifact),
         }
+        artifact_dir = self.root / run_id / "artifacts"
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        record_path = artifact_dir / f"{artifact_name}.json"
+        payload = json.dumps(record, indent=2, sort_keys=True) + "\n"
+        if record_path.exists():
+            existing = json.loads(record_path.read_text(encoding="utf-8"))
+            if existing != record:
+                raise FileExistsError(f"immutable artifact record already exists: {record_path}")
+        else:
+            record_path.write_text(payload, encoding="utf-8")
         return record
 
     def load_manifest(self, run_id: str) -> dict[str, Any]:
