@@ -23,7 +23,7 @@ from .schema import DatasetSpec, FeatureManifest
 from .validation import IntegrityReport, validate_dataset
 
 try:  # pragma: no cover - depends on optional torch installation
-    from .multimodal import CardiLearnX, CardiacFusionCore, SignalPatchEncoder, cosine_alignment_loss, modality_dropout
+    from .multimodal import CardiLearnX, CardiacFusionCore, SignalPatchEncoder, modality_dropout
 except ImportError:
     CardiLearnX = None
     CardiacFusionCore = None
