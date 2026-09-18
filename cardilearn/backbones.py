@@ -48,7 +48,8 @@ class ObjectEncoderAdapter:
         fn = getattr(self.model, self.method, None)
         if fn is None or not callable(fn):
             raise TypeError(f"{self.name} does not expose callable '{self.method}'")
-        return fn(data)
+        values = fn(data)
+        return validate_embedding_output(values)
 
 
 @dataclass(frozen=True)
@@ -67,36 +68,36 @@ EXTERNAL_ENCODERS = (
         name="geneformer",
         package="geneformer",
         source_repo="https://github.com/jkobject/geneformer",
-        method="encode",
-        notes="External pretrained rank-based transcriptomic representation; adapter uses the installed API supplied by the caller.",
+        method="caller_supplied",
+        notes="External pretrained rank-based transcriptomic representation; the repository-specific loading/encoding API is supplied by the caller.",
     ),
     ExternalEncoderSpec(
         name="scgpt",
         package="scgpt",
         source_repo="https://github.com/bowang-lab/scGPT",
-        method="encode",
-        notes="External gene/value Transformer representation; adapter boundary intentionally avoids importing optional dependencies.",
+        method="caller_supplied",
+        notes="External gene/value Transformer representation; the repository-specific loading/encoding API is supplied by the caller.",
     ),
     ExternalEncoderSpec(
         name="uce",
         package="uce",
         source_repo="https://github.com/snap-stanford/UCE",
-        method="encode",
+        method="caller_supplied",
         notes="External zero-shot cell representation; caller supplies the repository-specific model wrapper.",
     ),
     ExternalEncoderSpec(
         name="nicheformer",
         package="nicheformer",
         source_repo="https://github.com/theislab/nicheformer",
-        method="encode",
+        method="caller_supplied",
         notes="Optional single-cell/spatial encoder; callers provide the repository-specific wrapper.",
     ),
     ExternalEncoderSpec(
         name="scimilarity",
         package="scimilarity",
         source_repo="https://github.com/Genentech/scimilarity",
-        method="search",
-        notes="Retrieval-oriented representation; use its repository API through a caller-provided adapter.",
+        method="caller_supplied",
+        notes="Retrieval-oriented model; callers provide its repository-specific embedding/search adapter.",
     ),
     ExternalEncoderSpec(
         name="scvi",
