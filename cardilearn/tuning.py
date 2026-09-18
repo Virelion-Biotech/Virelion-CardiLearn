@@ -1,7 +1,7 @@
 """Leakage-aware hyperparameter search utilities."""
 from __future__ import annotations
 
-from sklearn.model_selection import GridSearchCV, GroupKFold, StratifiedGroupKFold, StratifiedKFold
+from sklearn.model_selection import GridSearchCV, GroupKFold, KFold, StratifiedGroupKFold, StratifiedKFold
 
 
 def grid_search(
@@ -26,7 +26,7 @@ def grid_search(
         splitter = (
             StratifiedKFold(n_splits=cv, shuffle=True, random_state=42)
             if task == "classification"
-            else GroupKFold(n_splits=cv)
+            else KFold(n_splits=cv, shuffle=True, random_state=42)
         )
     score = scoring or ("roc_auc" if task == "classification" else "neg_root_mean_squared_error")
     search = GridSearchCV(estimator, param_grid=param_grid, cv=splitter, scoring=score, n_jobs=-1, refit=True)

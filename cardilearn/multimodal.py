@@ -15,6 +15,8 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+from .objectives import cosine_alignment_loss
+
 
 @dataclass
 class MultimodalState:
@@ -56,6 +58,11 @@ class SignalPatchEncoder(nn.Module):
     def forward(self, signal: torch.Tensor) -> torch.Tensor:
         if signal.ndim != 3:
             raise ValueError("signal must have shape [batch, channels, time]")
+        if signal.shape[-1] < self.patch_size:
+            raise ValueError("signal time dimension must be at least one patch")
+        remainder = signal.shape[-1] % self.patch_size
+        if remainder:
+            signal = F.pad(signal, (0, self.patch_size - remainder))
         tokens = self.projection(signal).transpose(1, 2)
         cls = self.cls.expand(signal.shape[0], -1, -1)
         return self.norm(self.transformer(torch.cat([cls, tokens], dim=1))[:, 0])
@@ -126,16 +133,21 @@ class CardiacFusionCore(nn.Module):
                 x = self.null_token.expand(batch, -1)
                 present = torch.zeros(batch, dtype=torch.bool, device=device)
             else:
-                if x.ndim != 2:
+                if x.ndim != 2 or x.shape[0] != batch:
                     raise ValueError(f"{modality} embedding must be [batch, dim]")
+                if x.device != device:
+                    raise ValueError("all modality embeddings must be on the same device")
                 present = torch.ones(batch, dtype=torch.bool, device=x.device)
                 if available is not None and modality in available:
-                    present = available[modality].bool()
+                    present = available[modality].to(device=x.device).bool()
+                    if present.shape != (batch,):
+                        raise ValueError(f"{modality} availability must be [batch]")
                 x = torch.where(present.unsqueeze(-1), x, self.null_token.expand(batch, -1))
             token = x + self.modality_embedding[i].unsqueeze(0)
             tokens.append(token)
             availability.append(present)
-            quality[modality] = self.quality[modality](token)
+            raw_quality = self.quality[modality](token)
+            quality[modality] = raw_quality * present.to(raw_quality.dtype)
         sequence = torch.stack(tokens, dim=1)
         cls = self.cls.expand(batch, -1).unsqueeze(1)
         fused = self.norm(self.transformer(torch.cat([cls, sequence], dim=1))[:, 0])
@@ -184,17 +196,6 @@ class CardiLearnX(nn.Module):
 
     def encode(self, embeddings: Mapping[str, torch.Tensor], available: Mapping[str, torch.Tensor] | None = None) -> torch.Tensor:
         return self.forward(embeddings, available=available).z_shared
-
-
-def cosine_alignment_loss(z_a: torch.Tensor, z_b: torch.Tensor, temperature: float = 0.07) -> torch.Tensor:
-    """Symmetric InfoNCE for genuinely matched cross-modal observations."""
-    if z_a.shape != z_b.shape:
-        raise ValueError("paired embeddings must have identical shape")
-    a = F.normalize(z_a, dim=-1)
-    b = F.normalize(z_b, dim=-1)
-    logits = (a @ b.T) / temperature
-    labels = torch.arange(z_a.shape[0], device=z_a.device)
-    return 0.5 * (F.cross_entropy(logits, labels) + F.cross_entropy(logits.T, labels))
 
 
 def modality_dropout(embeddings: Mapping[str, torch.Tensor], probability: float = 0.2) -> dict[str, torch.Tensor]:

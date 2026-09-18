@@ -73,3 +73,14 @@ def test_factorized_decoder_has_no_dense_hidden_to_gene_matrix():
         decoder_dim=16,
     )
     assert model.decoder.gene_projection.shape == (5000, 16)
+
+
+def test_masked_gene_input_has_explicit_learnable_token():
+    model = GeneValueEncoder(16, 8)
+    x = torch.ones(2, 16)
+    mask = torch.zeros_like(x, dtype=torch.bool)
+    mask[:, 3] = True
+    unmasked = model(x)
+    masked = model(x.masked_fill(mask, 0.0), masked=mask)
+    assert model.mask_embedding.requires_grad
+    assert not torch.allclose(unmasked[:, 3], masked[:, 3])

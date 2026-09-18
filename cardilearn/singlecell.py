@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from scipy import sparse
 
 
 def load_anndata(path: str | Path):
@@ -37,10 +38,14 @@ def pseudobulk_counts(
     codes, uniques = pd.factorize(groups, sort=False)
     if hasattr(matrix, "tocsr"):
         sparse_matrix = matrix.tocsr()
-        indicator = np.zeros((len(uniques), sparse_matrix.shape[0]), dtype=np.float32)
-        indicator[codes, np.arange(len(codes))] = 1.0
-        aggregated = indicator @ sparse_matrix
-        aggregated = np.asarray(aggregated)
+        indicator = sparse.csr_matrix(
+            (
+                np.ones(len(codes), dtype=np.float32),
+                (codes, np.arange(len(codes))),
+            ),
+            shape=(len(uniques), sparse_matrix.shape[0]),
+        )
+        aggregated = (indicator @ sparse_matrix).toarray()
     else:
         dense = np.asarray(matrix)
         aggregated = np.zeros((len(uniques), dense.shape[1]), dtype=np.float64)

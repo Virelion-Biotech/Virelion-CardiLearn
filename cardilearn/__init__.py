@@ -8,6 +8,7 @@ from .config_loader import ConfigError, load_yaml_config, validate_reproducibili
 from .dataset_card import DatasetCard
 from .fusion import align_modalities, concatenate_embeddings
 from .modalities import OmicsMatrix, Waveform
+from .objectives import ObjectiveSchedule, ObjectiveStage, ObjectiveWeights, cosine_alignment_loss, masked_log1p_loss, negative_binomial_nll, vicreg_loss
 from .registry import ModelRegistry
 from .reproducibility import (
     ReproducibilityManifest,
@@ -67,7 +68,7 @@ __all__ = [
     "IntegrityReport",
     "ModelRegistry",
     "OmicsMatrix",
-    "ProgramBackbone",
+    "ObjectiveSchedule", "ObjectiveStage", "ObjectiveWeights",    "ProgramBackbone",
     "ReproducibilityManifest",
     "SignalPatchEncoder",
     "Waveform",
@@ -83,7 +84,7 @@ __all__ = [
     "load_manifest",
     "load_yaml_config",
     "make_manifest",
-    "modality_dropout",
+    "masked_log1p_loss", "negative_binomial_nll", "vicreg_loss",    "modality_dropout",
     "rank_models",
     "save_manifest",
     "summarize_repeated_scores",

@@ -81,8 +81,9 @@ class GeneValueEncoder(nn.Module):
         self.dim = dim
         self.value_style = value_style
         self.gene_embedding = nn.Parameter(torch.empty(n_genes, dim))
-        self.mask_embedding = nn.Parameter(torch.zeros(1, 1, dim))
+        self.mask_embedding = nn.Parameter(torch.empty(1, 1, dim))
         nn.init.normal_(self.gene_embedding, mean=0.0, std=0.02)
+        nn.init.normal_(self.mask_embedding, mean=0.0, std=0.02)
         self.value_projection = nn.Sequential(
             nn.Linear(1, dim),
             nn.LayerNorm(dim),
@@ -155,8 +156,8 @@ class GRNProgramRouter(nn.Module):
         self.gate = nn.Sequential(nn.LayerNorm(dim), nn.Linear(dim, 1))
 
     def _logits_chunk(self, gate: torch.Tensor, start: int, end: int) -> torch.Tensor:
-        assignment = self.assignment_logits[start:end].T.unsqueeze(0)
-        prior = self.prior[start:end].T.unsqueeze(0)
+        assignment = self.assignment_logits[start:end].T.unsqueeze(0).to(dtype=gate.dtype, device=gate.device)
+        prior = self.prior[start:end].T.unsqueeze(0).to(dtype=gate.dtype, device=gate.device)
         return assignment + self.prior_strength * prior + gate[:, None, start:end]
 
     def forward(self, gene_tokens: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
@@ -421,6 +422,11 @@ class CardiLearnResearch(nn.Module):
             decoder_context_dim,
             decoder_dim=decoder_dim,
         )
+        self.masked_cell_projection = nn.Sequential(
+            nn.Linear(decoder_context_dim, decoder_dim),
+            nn.LayerNorm(decoder_dim),
+            nn.GELU(),
+        )
         self.maturation = nn.Sequential(nn.Linear(shared_dim, 192), nn.GELU(), nn.Linear(192, 1))
         self.injury = nn.Sequential(nn.Linear(shared_dim, 192), nn.GELU(), nn.Linear(192, 1))
         self.cell_type = nn.Sequential(nn.Linear(shared_dim, 192), nn.GELU(), nn.Linear(192, n_cell_types))
@@ -485,6 +491,8 @@ class CardiLearnResearch(nn.Module):
         context = self._context(species, assay, tissue)
         cell_state = torch.cat([z_shared, z_private, context], dim=-1)
         mu, theta = self.decoder(cell_state, library_size)
+        masked_hidden = self.masked_cell_projection(cell_state)
+        masked_prediction = masked_hidden @ self.decoder.gene_projection.T + self.decoder.gene_bias.unsqueeze(0)
         species_logits = None
         if self.species_adversary is not None:
             species_logits = self.species_adversary(self.grl(z_shared))
@@ -494,7 +502,7 @@ class CardiLearnResearch(nn.Module):
             z_private=z_private,
             reconstruction_mu=mu,
             reconstruction_theta=theta,
-            masked_prediction=torch.log1p(mu),
+            masked_prediction=masked_prediction,
             maturation=self.maturation(z_shared).squeeze(-1),
             injury=self.injury(z_shared).squeeze(-1),
             cell_type=self.cell_type(z_shared),
