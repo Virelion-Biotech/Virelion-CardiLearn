@@ -14,7 +14,6 @@ The implementation is an empirical model, not a scientific validity claim.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Mapping
 
 import torch
 from torch import nn
