@@ -181,35 +181,144 @@ def normalized_sample_label(value: str) -> str:
 def sample_column_aliases(rec: dict[str, object]) -> set[str]:
     gsm = str(rec["geo_accession"]).upper()
     title = str(rec.get("title", "")).strip()
+    relations = rec.get("relation", [])
+
     aliases = {
         normalized_sample_label(gsm),
         normalized_sample_label(title),
     }
 
+    if isinstance(relations, list):
+        for relation in relations:
+            accession_hits = re.findall(
+                r"(?<![A-Za-z0-9])(?:SRX|SRR|SRS)\d+(?!\d)",
+                str(relation),
+                flags=re.I,
+            )
+            aliases.update(
+                normalized_sample_label(hit)
+                for hit in accession_hits
+            )
+
     title_norm = normalized_sample_label(title)
 
-    condition = "mi" if bool(MI_RE.search(title)) else "sham" if bool(SHAM_RE.search(title)) else None
-    rep_match = re.search(r"\brep\s*([0-9]+)\b", title.lower())
-    time_match = re.search(r"\b([0-9]+)\s*days?\b", title.lower())
+    condition = (
+        "mi"
+        if bool(MI_RE.search(title))
+        else "sham"
+        if bool(SHAM_RE.search(title))
+        else None
+    )
+
+    rep_match = re.search(
+        r"\brep(?:licate)?\s*[_-]?\s*([0-9]+)\b",
+        title.lower(),
+    )
+
+    # Also recognize compact labels such as:
+    #   Sham1 / Sham_1 / Sham-rep1
+    #   MI1 / MI_1 / MI-rep1
+    compact_rep_match = re.search(
+        r"\b(?:sham|mi)[-_ ]?(?:rep(?:licate)?[-_ ]?)?([0-9]+)\b",
+        title.lower(),
+    )
+
+    rep_number = (
+        rep_match.group(1)
+        if rep_match
+        else compact_rep_match.group(1)
+        if compact_rep_match
+        else None
+    )
+
+    time_match = re.search(
+        r"\b([0-9]+)\s*(?:days?|d)\b",
+        title.lower(),
+    )
+
+    time_number = (
+        time_match.group(1)
+        if time_match
+        else None
+    )
 
     if condition:
-        parts = [condition]
-        if time_match:
-            parts.append(f"{time_match.group(1)}d")
-        if rep_match:
-            parts.append(f"rep{rep_match.group(1)}")
-        aliases.add(normalized_sample_label(" ".join(parts)))
+        condition_short = condition
+
+        # Canonical compact aliases.
+        if time_number and rep_number:
+            aliases.update({
+                normalized_sample_label(
+                    f"{condition_short}{time_number}d{rep_number}"
+                ),
+                normalized_sample_label(
+                    f"{condition_short}_{time_number}d_{rep_number}"
+                ),
+                normalized_sample_label(
+                    f"{condition_short}{time_number}day{rep_number}"
+                ),
+                normalized_sample_label(
+                    f"{condition_short}_{time_number}_days_{rep_number}"
+                ),
+            })
+
+        if rep_number:
+            aliases.update({
+                normalized_sample_label(
+                    f"{condition_short}{rep_number}"
+                ),
+                normalized_sample_label(
+                    f"{condition_short}_rep{rep_number}"
+                ),
+                normalized_sample_label(
+                    f"{condition_short}_rep_{rep_number}"
+                ),
+                normalized_sample_label(
+                    f"{condition_short}-{rep_number}"
+                ),
+                normalized_sample_label(
+                    f"{condition_short}_{rep_number}"
+                ),
+            })
+
+        parts = [condition_short]
+
+        if time_number:
+            parts.append(f"{time_number}d")
+
+        if rep_number:
+            parts.append(f"rep{rep_number}")
+
+        aliases.add(
+            normalized_sample_label(
+                " ".join(parts)
+            )
+        )
 
     if title_norm:
-        aliases.add(title_norm.replace(" ", "_"))
-        aliases.add(title_norm.replace(" ", ""))
+        aliases.add(
+            title_norm.replace(" ", "_")
+        )
+        aliases.add(
+            title_norm.replace(" ", "")
+        )
 
-    return {x for x in aliases if x}
+    # The GEO source may expose a very compact NC/MI naming scheme.
+    # For NC1/NC2/... the condition is known only from the locked manifest;
+    # those aliases are added in resolve_matrix_sample_columns when manifest
+    # condition information is available.
+
+    return {
+        x
+        for x in aliases
+        if x
+    }
 
 
 def resolve_matrix_sample_columns(
     columns: list[str],
     sample_records: list[dict[str, object]],
+    manifest_record: dict[str, object] | None = None,
 ) -> dict[str, str]:
     by_gsm = {
         str(rec["geo_accession"]).upper(): rec
@@ -219,12 +328,86 @@ def resolve_matrix_sample_columns(
     alias_to_gsm: dict[str, set[str]] = {}
 
     for gsm, rec in by_gsm.items():
-        for alias in sample_column_aliases(rec):
-            alias_to_gsm.setdefault(alias, set()).add(gsm)
+        aliases = sample_column_aliases(rec)
+
+        if manifest_record:
+            sham_samples = {
+                str(x).upper()
+                for x in manifest_record.get(
+                    "sham_samples",
+                    [],
+                )
+            }
+            mi_samples = {
+                str(x).upper()
+                for x in manifest_record.get(
+                    "mi_samples",
+                    [],
+                )
+            }
+
+            if gsm in sham_samples:
+                condition = "sham"
+            elif gsm in mi_samples:
+                condition = "mi"
+            else:
+                condition = None
+
+            if condition:
+                title = str(
+                    rec.get("title", "")
+                ).lower()
+
+                rep_match = re.search(
+                    r"\b(?:rep(?:licate)?|sample)?\s*[_-]?\s*([0-9]+)\b",
+                    title,
+                )
+
+                if rep_match:
+                    rep = rep_match.group(1)
+
+                    aliases.update({
+                        normalized_sample_label(
+                            f"{condition}{rep}"
+                        ),
+                        normalized_sample_label(
+                            f"{condition}_{rep}"
+                        ),
+                        normalized_sample_label(
+                            f"{condition}rep{rep}"
+                        ),
+                    })
+
+                # Compact NC1 / NC2/... labels in GSE308783.
+                # The manifest, not the label itself, supplies the condition.
+                if condition == "sham":
+                    nc_match = re.search(
+                        r"\bnc\s*[_-]?\s*([0-9]+)\b",
+                        title,
+                    )
+                    if nc_match:
+                        aliases.add(
+                            normalized_sample_label(
+                                f"nc{nc_match.group(1)}"
+                            )
+                        )
+
+        for alias in aliases:
+            alias_to_gsm.setdefault(
+                alias,
+                set(),
+            )
 
     resolved: dict[str, str] = {}
 
+    annotation_columns = featurecounts_annotation_columns(
+        columns
+    )
+
     for column in columns:
+        if column in annotation_columns:
+            continue
+
         text = str(column).strip()
         gsm_hits = [
             gsm.upper()
@@ -291,6 +474,27 @@ def resolve_matrix_sample_columns(
     return resolved
 
 
+def featurecounts_annotation_columns(
+    columns: list[str],
+) -> set[str]:
+    known = {
+        "geneid",
+        "chr",
+        "start",
+        "end",
+        "strand",
+        "length",
+        "gene_id",
+        "geneid_id",
+    }
+    return {
+        col
+        for col in columns
+        if str(col).strip().lower()
+        in known
+    }
+
+
 def listing_urls(url: str) -> list[str]:
     try:
         r = requests.get(url, timeout=TIMEOUT)
@@ -329,11 +533,23 @@ def source_urls(acc: str, samples: list[dict[str, object]]) -> list[str]:
                 per_gsm[gsm] = u
 
     if expected and expected.issubset(per_gsm):
-        return [per_gsm[g] for g in sorted(expected)]
+        return list(dict.fromkeys(
+            per_gsm[g]
+            for g in sorted(expected)
+        ))
 
     discovered = set(explicit)
-    discovered.update(listing_urls(f"{series_root(acc)}suppl/"))
-    return sorted(discovered, key=candidate_score, reverse=True)
+    discovered.update(
+        listing_urls(
+            f"{series_root(acc)}suppl/"
+        )
+    )
+
+    return sorted(
+        discovered,
+        key=candidate_score,
+        reverse=True,
+    )
 
 
 def candidate_score(url: str) -> int:
@@ -438,6 +654,7 @@ def integer_values(series: pd.Series) -> tuple[np.ndarray, bool]:
 def parse_count_file(
     path: Path,
     sample_records: list[dict[str, object]],
+    manifest_record: dict[str, object] | None = None,
 ) -> dict[str, pd.Series]:
     df = read_table(path)
     expected = [
@@ -453,6 +670,7 @@ def parse_count_file(
     matrix_cols = resolve_matrix_sample_columns(
         list(df.columns[1:]),
         sample_records,
+        manifest_record=manifest_record,
     )
 
     if matrix_cols:
@@ -590,7 +808,11 @@ def acquire_counts(acc: str, rec: dict[str, object], samples: list[dict[str, obj
                 audit.append({"url": url, "status": "rejected", "reason": f"normalized-scale filename: {file.name}"})
                 continue
             try:
-                parsed = parse_count_file(file, samples)
+                parsed = parse_count_file(
+                    file,
+                    samples,
+                    manifest_record=rec,
+                )
                 for gsm, series in parsed.items():
                     if gsm.upper() in parsed_samples:
                         halt(f"Multiple independent source files map to GSM {gsm} in {acc}; mapping is ambiguous")
@@ -831,8 +1053,76 @@ def main() -> None:
         if set(wanted) - set(sample_map):
             halt(f"GEO metadata missing manifest samples for {acc}: {sorted(set(wanted) - set(sample_map))}")
 
-        selected = [sample_map[gsm] for gsm in wanted]
-        conditions = [classify_condition(x) for x in selected]
+        selected = [
+            sample_map[gsm]
+            for gsm in wanted
+        ]
+
+        manifest_sham = {
+            str(x).upper()
+            for x in rec.get(
+                "sham_samples",
+                [],
+            )
+        }
+
+        manifest_mi = {
+            str(x).upper()
+            for x in rec.get(
+                "mi_samples",
+                [],
+            )
+        }
+
+        conditions = []
+
+        for gsm, sample in zip(
+            wanted,
+            selected,
+        ):
+            if gsm.upper() in manifest_sham:
+                manifest_condition = "sham"
+            elif gsm.upper() in manifest_mi:
+                manifest_condition = "MI"
+            else:
+                manifest_condition = classify_condition(
+                    sample
+                )
+
+            title = str(
+                sample.get(
+                    "title",
+                    "",
+                )
+            )
+
+            title_condition = classify_condition(
+                sample
+            )
+
+            if (
+                manifest_condition in {
+                    "sham",
+                    "MI",
+                }
+                and title_condition in {
+                    "sham",
+                    "MI",
+                }
+                and manifest_condition != title_condition
+            ):
+                halt(
+                    "Manifest condition conflicts with GEO title.
+"
+                    f"Accession: {acc}\n"
+                    f"Sample: {gsm}\n"
+                    f"Manifest: {manifest_condition}\n"
+                    f"Title: {title}"
+                )
+
+            conditions.append(
+                manifest_condition
+            )
 
         if acc == "GSE186875":
             checked = []
