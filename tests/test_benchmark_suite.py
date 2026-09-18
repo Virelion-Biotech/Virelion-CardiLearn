@@ -25,3 +25,26 @@ def test_autoencoder_returns_latent_representation():
     _, encode = fit_autoencoder(x, latent_dim=2, hidden_layer_sizes=(5,), random_state=42)
     z = encode(x[:3])
     assert z.shape == (3, 2)
+
+
+def test_frozen_embedding_benchmark_uses_grouped_classification():
+    import numpy as np
+    from cardilearn.representation_benchmark import benchmark_embedding
+    z = np.array([[0.0,0.0],[0.1,0.0],[1.0,1.0],[1.1,1.0],[0.0,0.2],[1.2,0.8]])
+    y = np.array([0,0,1,1,0,1])
+    groups = np.array(["a","b","c","d","e","f"])
+    result = benchmark_embedding(z,y,model_name="fixture",task="classification",groups=groups,n_splits=3)
+    assert result.primary_metric == "auroc"
+    assert len(result.fold_results) == 3
+
+
+def test_grouped_permutation_rejects_inconsistent_group_labels():
+    import numpy as np
+    from cardilearn.representation_benchmark import permutation_null_auroc
+    z = np.random.default_rng(0).normal(size=(6,4))
+    y = np.array([0,1,1,0,1,0])
+    groups = np.array(["a","a","b","c","d","e"])
+    try:
+        permutation_null_auroc(z,y,groups=groups,n_permutations=2,n_splits=2)
+    except ValueError as exc:
+        assert "exactly one class label" in str(exc)
