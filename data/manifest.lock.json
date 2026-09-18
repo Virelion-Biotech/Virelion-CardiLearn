@@ -213,60 +213,50 @@
         ]
       },
       {
-        "accession": "GSE229147",
-        "species": "Rattus norvegicus",
+        "accession": "GSE308783",
+        "species": "Mus musculus",
         "assay": "bulk_RNA_seq",
-        "biological_unit_level": "biological_replicate",
-        "study_family_id": "GSE229147",
+        "biological_unit_level": "individual_sample_biological_replicate",
+        "study_family_id": "GSE308783",
         "condition_levels": [
           "sham",
           "MI"
         ],
         "timepoints_days": [
-          28
+          4
         ],
         "regions": [
-          "heart"
+          "myocardial_tissue"
         ],
-        "sample_count": 6,
-        "independent_units": 6,
-        "design": "3 sham + 3 MI biological replicates; each biological replicate has two sequencing libraries; DAPA arms excluded",
-        "technical_library_groups": {
-          "sham_1": [
-            "GSM7154228"
-          ],
-          "sham_2": [
-            "GSM7154229"
-          ],
-          "sham_3": [
-            "GSM7154230"
-          ],
-          "MI_1": [
-            "GSM7154231"
-          ],
-          "MI_2": [
-            "GSM7154232"
-          ],
-          "MI_3": [
-            "GSM7154233"
-          ]
-        },
-        "excluded_samples": [
-          "GSM7154234",
-          "GSM7154235",
-          "GSM7154236"
-        ],
+        "sample_count": 7,
+        "independent_units": 7,
+        "design": "4 sham-operated control samples + 3 MI samples at day 4; each sample has its own GEO/BioSample/SRA record.",
         "samples": [
-          "GSM7154228",
-          "GSM7154229",
-          "GSM7154230",
-          "GSM7154231",
-          "GSM7154232",
-          "GSM7154233"
+          "GSM9253077",
+          "GSM9253078",
+          "GSM9253079",
+          "GSM9253080",
+          "GSM9253081",
+          "GSM9253082",
+          "GSM9253083"
+        ],
+        "sham_samples": [
+          "GSM9253077",
+          "GSM9253078",
+          "GSM9253079",
+          "GSM9253080"
+        ],
+        "mi_samples": [
+          "GSM9253081",
+          "GSM9253082",
+          "GSM9253083"
         ],
         "evidence_urls": [
-          "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE229147"
-        ]
+          "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE308783",
+          "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSM9253077",
+          "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSM9253081"
+        ],
+        "data_scale_warning": "GEO supplementary processed values are FPKM; the strict count-model bundle must acquire raw SRA reads or a genuine raw-count matrix and must not use FPKM as negative-binomial input."
       }
     ],
     "specialized_cellular_validation": [
@@ -322,9 +312,9 @@
         "regions": [
           "left_ventricle"
         ],
-        "sample_count": 15,
-        "independent_units": 15,
-        "design": "single-nucleus arm; biological replicates explicitly identified in GEO; used for temporal/border-zone validation",
+        "sample_count": 18,
+        "independent_units": 18,
+        "design": "18 single-nucleus MI samples: Day0 (3), 1HR (2), 4HR (1), Day1 (6), Day3 (3), Day7 (3); GEO explicitly labels the listed records as biological replicates where applicable.",
         "samples": [
           "GSM6613059",
           "GSM6613060",
@@ -372,6 +362,16 @@
       "accession": "GSE217494",
       "reason": "Human CITE-seq is valuable, but exact heart/donor↔GEO-library mapping and paired GEX/ADT relationships must be reconciled before strict patient-level locking.",
       "use": "human translational validation after complete source reconciliation"
+    },
+    {
+      "accession": "GSE229147",
+      "reason": "Removed from strict lock because the public evidence inspected here did not establish the relationship between multiple library labels and the declared biological replicates strongly enough for a fail-closed lock.",
+      "use": "do not use until explicit library-to-biological-unit mapping is recovered"
+    },
+    {
+      "accession": "GSE115665",
+      "reason": "Biologically valuable porcine regeneration cohort, but one inspected GEO record is internally inconsistent: GSM3186878 title identifies Pig_1763 while its characteristics field identifies individual Pig_1659. This source-level contradiction prevents automatic strict locking; no correction is inferred.",
+      "use": "retain as quarantined regeneration reference until all 36 records are reconciled manually against source tables/publication"
     }
   ],
   "cohort_accounting": {
@@ -382,23 +382,24 @@
       "GSE232259",
       "GSE52313",
       "GSE186875",
-      "GSE229147"
+      "GSE308783"
     ],
     "strict_species": [
-      "Mus musculus",
-      "Rattus norvegicus"
+      "Mus musculus"
     ],
-    "strict_biological_units": 71,
-    "note": "The unit total is an inventory count across studies, not a claim that all 71 are exchangeable observations. Study, species, timepoint, tissue and assay remain explicit factors."
+    "strict_biological_units": 72,
+    "note": "The unit total is an inventory count across studies, not a claim that all units are exchangeable observations. Study, species, timepoint, tissue, and assay remain explicit factors. Raw count acquisition and QC remain mandatory before model training."
   },
   "acquisition_requirements": {
     "before_raw_lock": [
       "download raw/processed expression from the accession-specific GEO/SRA source",
       "record SHA-256 for every source file",
       "verify expression identifiers against the accession sample list",
-      "verify one biological-unit-to-library mapping",
-      "verify count-scale semantics before negative-binomial training",
-      "run structural and biological QC before model benchmarking"
+      "verify one biological-unit-to-library mapping and record any technical-library nesting",
+      "verify count-scale semantics before negative-binomial training; transformed FPKM/TPM values are not acceptable model inputs",
+      "run structural, library-size, detected-gene, mitochondrial/ribosomal, doublet/ambient-RNA where applicable, and biological-replicate QC before benchmarking",
+      "run cross-study gene-identifier reconciliation without one-to-many mappings",
+      "preserve study_family_id so related experiments cannot cross benchmark partitions"
     ],
     "fail_closed": "Any mismatch, missing file, ambiguous biological-unit relationship, or unexpected expression scale blocks the cohort from the locked analysis set."
   }
