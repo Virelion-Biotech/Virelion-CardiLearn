@@ -83,3 +83,13 @@ def test_bootstrap_metric_rejects_mixed_labels_within_biological_group():
             groups=np.array(["s1", "s1", "s2", "s2"]),
             n_bootstrap=10,
         )
+
+
+def test_bootstrap_treats_variable_cell_counts_as_equal_biological_groups():
+    import numpy as np
+    from cardilearn.representation_benchmark import bootstrap_metric
+    y = np.array([0,0,0,1,1])
+    score = np.array([0.1,0.2,0.3,0.8,0.9])
+    groups = np.array(["s1","s1","s1","s2","s2"])
+    result = bootstrap_metric(y, score, groups=groups, n_bootstrap=20, seed=2)
+    assert result["n_valid"] > 0
