@@ -44,7 +44,6 @@ def test_grouped_permutation_rejects_inconsistent_group_labels():
     z = np.random.default_rng(0).normal(size=(6,4))
     y = np.array([0,1,1,0,1,0])
     groups = np.array(["a","a","b","c","d","e"])
-    try:
+    import pytest
+    with pytest.raises(ValueError, match="exactly one class label"):
         permutation_null_auroc(z,y,groups=groups,n_permutations=2,n_splits=2)
-    except ValueError as exc:
-        assert "exactly one class label" in str(exc)
