@@ -84,3 +84,14 @@ def test_masked_gene_input_has_explicit_learnable_token():
     masked = model(x.masked_fill(mask, 0.0), masked=mask)
     assert model.mask_embedding.requires_grad
     assert not torch.allclose(unmasked[:, 3], masked[:, 3])
+
+
+def test_conserved_gene_identity_and_group_pool():
+    from cardilearn.conserved import ConservedGeneIdentity, functional_group_pool
+    ids = torch.tensor([0, 0, 1, 2])
+    identity = ConservedGeneIdentity(4, 6, ids, 3)
+    assert identity().shape == (4, 6)
+    states = torch.arange(2 * 4 * 3, dtype=torch.float32).reshape(2, 4, 3)
+    pooled = functional_group_pool(states, ids, 3)
+    assert pooled.shape == (2, 3, 3)
+    assert torch.allclose(pooled[:, 0], states[:, :2].mean(dim=1))
