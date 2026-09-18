@@ -24,5 +24,6 @@ jobs:
         env:
           PYTHONPATH: .
         run: python -m pytest -q
+      # Core CI intentionally excludes optional torch tests; the prototype workflow runs them with torch installed.
       # Repository-wide Ruff cleanup is tracked separately from the test gate.
       # The CardiLearn prototype has its own strict lint/test/smoke workflow.
