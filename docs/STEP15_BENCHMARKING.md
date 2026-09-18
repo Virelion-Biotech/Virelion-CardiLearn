@@ -71,3 +71,29 @@ Those require additional experimental or external validation.
 ## Current status
 
 Step 15 implementation is **protocol-ready**, but no real-data benchmark winner is claimed. The benchmark becomes an empirical result only after the declared datasets are locked, materialized, trained, and evaluated under this protocol.
+
+
+## Research representation matrix
+
+The legacy Step 15 supervised matrix remains useful for tabular predictors, but the current research representation model is evaluated through frozen embeddings. Its declared comparison set is:
+
+- PCA + linear probe;
+- plain autoencoder;
+- scVI;
+- Geneformer;
+- scGPT;
+- UCE;
+- Nicheformer;
+- scimilarity;
+- CardiLearn Research.
+
+External encoders are adapter-based and must be loaded through their own documented APIs. A missing external model is recorded as unavailable; it is not replaced with a synthetic score.
+
+Use biological-group aggregation before primary inference when multiple cells/nuclei come from the same sample:
+
+```python
+from cardilearn.representation_benchmark import aggregate_embeddings_by_group
+Z_group, y_group, group_ids = aggregate_embeddings_by_group(Z, sample_ids, y)
+```
+
+The same study-family/grouping contract is then used for downstream probes and cross-study validation.
