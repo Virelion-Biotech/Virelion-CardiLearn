@@ -332,10 +332,18 @@ def bootstrap_metric(
         if group_values.shape != y.shape:
             raise ValueError("groups must have one value per observation")
         unique_groups = pd.unique(group_values)
-        group_indices = [np.flatnonzero(group_values == group) for group in unique_groups]
-        for indices in group_indices:
-            if np.unique(y[indices]).size != 1:
+        group_y = []
+        group_score = []
+        for group in unique_groups:
+            indices = np.flatnonzero(group_values == group)
+            labels = y[indices]
+            if np.unique(labels).size != 1:
                 raise ValueError("each biological bootstrap group must have exactly one target label")
+            group_y.append(labels[0])
+            group_score.append(float(np.mean(score[indices])))
+        y = np.asarray(group_y, dtype=y.dtype)
+        score = np.asarray(group_score, dtype=float)
+        group_values = None
     if n_bootstrap < 1:
         raise ValueError("n_bootstrap must be positive")
     rng = np.random.default_rng(seed)
