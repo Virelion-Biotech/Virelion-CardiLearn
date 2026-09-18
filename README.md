@@ -32,6 +32,8 @@ cardilearn train --data data.csv --target label --output runs/example
 cardilearn benchmark-info --definition configs/benchmark_v1.yaml
 ```
 
+For representation-learning evaluation, use `configs/representation_benchmark_v1.yaml`. The research model is evaluated from frozen embeddings rather than by reconstruction loss alone, and repeated cells/nuclei can be aggregated to biological sample before the primary probe.
+
 The repository also exposes Python model/training APIs. The prototype model should be used for lightweight software testing where supported by the training scripts.
 
 ## Inputs and outputs
