@@ -349,11 +349,7 @@ def bootstrap_metric(
     rng = np.random.default_rng(seed)
     values: list[float] = []
     for _ in range(n_bootstrap):
-        if group_values is None:
-            indices = rng.integers(0, len(y), len(y))
-        else:
-            sampled_groups = rng.integers(0, len(group_indices), len(group_indices))
-            indices = np.concatenate([group_indices[index] for index in sampled_groups])
+        indices = rng.integers(0, len(y), len(y))
         sample_y = y[indices]
         if metric == "auroc":
             if len(np.unique(sample_y)) < 2:
