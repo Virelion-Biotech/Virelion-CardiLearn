@@ -81,8 +81,9 @@ class GeneValueEncoder(nn.Module):
         self.dim = dim
         self.value_style = value_style
         self.gene_embedding = nn.Parameter(torch.empty(n_genes, dim))
-        self.mask_embedding = nn.Parameter(torch.zeros(1, 1, dim))
+        self.mask_embedding = nn.Parameter(torch.empty(1, 1, dim))
         nn.init.normal_(self.gene_embedding, mean=0.0, std=0.02)
+        nn.init.normal_(self.mask_embedding, mean=0.0, std=0.02)
         self.value_projection = nn.Sequential(
             nn.Linear(1, dim),
             nn.LayerNorm(dim),
