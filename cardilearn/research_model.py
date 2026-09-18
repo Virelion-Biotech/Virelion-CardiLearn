@@ -81,6 +81,7 @@ class GeneValueEncoder(nn.Module):
         self.dim = dim
         self.value_style = value_style
         self.gene_embedding = nn.Parameter(torch.empty(n_genes, dim))
+        self.mask_embedding = nn.Parameter(torch.zeros(1, 1, dim))
         nn.init.normal_(self.gene_embedding, mean=0.0, std=0.02)
         self.value_projection = nn.Sequential(
             nn.Linear(1, dim),
@@ -89,7 +90,7 @@ class GeneValueEncoder(nn.Module):
             nn.Dropout(dropout),
         )
 
-    def forward(self, counts: torch.Tensor) -> torch.Tensor:
+    def forward(self, counts: torch.Tensor, masked: torch.Tensor | None = None) -> torch.Tensor:
         if counts.ndim != 2 or counts.shape[1] != self.n_genes:
             raise ValueError(f"expected [batch, {self.n_genes}] counts, got {tuple(counts.shape)}")
         if not torch.is_floating_point(counts):
@@ -100,7 +101,12 @@ class GeneValueEncoder(nn.Module):
             values = torch.log1p(counts)
         else:
             values = fractional_rank(counts)
-        return self.gene_embedding.unsqueeze(0) + self.value_projection(values.unsqueeze(-1))
+        tokens = self.gene_embedding.unsqueeze(0) + self.value_projection(values.unsqueeze(-1))
+        if masked is not None:
+            if masked.shape != counts.shape:
+                raise ValueError("masked must have the same shape as counts")
+            tokens = tokens + masked.to(tokens.dtype).unsqueeze(-1) * self.mask_embedding
+        return tokens
 
 
 class GRNProgramRouter(nn.Module):
@@ -449,10 +455,11 @@ class CardiLearnResearch(nn.Module):
         species: torch.Tensor,
         assay: torch.Tensor,
         tissue: torch.Tensor | None = None,
+        gene_mask: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         if counts.shape[0] != species.shape[0] or counts.shape[0] != assay.shape[0]:
             raise ValueError("counts, species and assay batch dimensions must agree")
-        gene_tokens = self.input_encoder(counts)
+        gene_tokens = self.input_encoder(counts, masked=gene_mask)
         programs, program_mass = self.router(gene_tokens)
         programs = self.program_backbone(programs)
         pool_logits = self.program_pool(programs).squeeze(-1)
@@ -470,10 +477,11 @@ class CardiLearnResearch(nn.Module):
         *,
         tissue: torch.Tensor | None = None,
         library_size: torch.Tensor | None = None,
+        gene_mask: torch.Tensor | None = None,
     ) -> ResearchOutput:
         if library_size is None:
             library_size = counts.sum(dim=-1).clamp_min(1.0)
-        z_program, z_shared, z_private, program_mass = self.encode(counts, species, assay, tissue)
+        z_program, z_shared, z_private, program_mass = self.encode(counts, species, assay, tissue, gene_mask)
         context = self._context(species, assay, tissue)
         cell_state = torch.cat([z_shared, z_private, context], dim=-1)
         mu, theta = self.decoder(cell_state, library_size)
