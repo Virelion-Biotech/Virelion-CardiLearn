@@ -421,6 +421,11 @@ class CardiLearnResearch(nn.Module):
             decoder_context_dim,
             decoder_dim=decoder_dim,
         )
+        self.masked_cell_projection = nn.Sequential(
+            nn.Linear(decoder_context_dim, decoder_dim),
+            nn.LayerNorm(decoder_dim),
+            nn.GELU(),
+        )
         self.maturation = nn.Sequential(nn.Linear(shared_dim, 192), nn.GELU(), nn.Linear(192, 1))
         self.injury = nn.Sequential(nn.Linear(shared_dim, 192), nn.GELU(), nn.Linear(192, 1))
         self.cell_type = nn.Sequential(nn.Linear(shared_dim, 192), nn.GELU(), nn.Linear(192, n_cell_types))
