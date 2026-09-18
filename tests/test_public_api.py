@@ -23,7 +23,7 @@ def test_regression_registry_is_stable():
 
 
 def test_representation_registry_exposes_external_comparison_set():
-    assert available_models("representation") == ("pca", "autoencoder", "scvi", "geneformer", "scgpt", "uce", "cardilearn_research")
+    assert available_models("representation") == ("pca", "autoencoder", "scvi", "geneformer", "scgpt", "uce", "nicheformer", "scimilarity", "cardilearn_research")
 
 
 def test_public_api_exports_are_unique():
