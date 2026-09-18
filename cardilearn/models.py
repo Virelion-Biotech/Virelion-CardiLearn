@@ -65,5 +65,5 @@ def available_models(task: str) -> tuple[str, ...]:
     if task == "regression":
         return ("ridge", "hist_gradient_boosting", "mlp")
     if task == "representation":
-        return ("pca", "autoencoder", "scvi", "geneformer", "scgpt", "uce", "cardilearn_research")
+        return ("pca", "autoencoder", "scvi", "geneformer", "scgpt", "uce", "nicheformer", "scimilarity", "cardilearn_research")
     raise ValueError(f"unsupported task: {task}")
