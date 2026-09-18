@@ -16,7 +16,7 @@ class SpatialGraph:
     n_nodes: int
 
     def validate(self) -> None:
-        if self.edge_index.ndim != 2 or tuple(self.edge_index.shape[:1]) != (2,):
+        if self.edge_index.ndim != 2 or self.edge_index.shape[0] != 2:
             raise ValueError("edge_index must have shape [2, edges]")
         if self.edge_index.dtype not in (torch.int32, torch.int64):
             raise ValueError("edge_index must use integer indices")
