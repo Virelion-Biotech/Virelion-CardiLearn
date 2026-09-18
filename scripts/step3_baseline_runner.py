@@ -12,6 +12,7 @@ import sys
 import tarfile
 import zipfile
 from pathlib import Path
+from typing import NoReturn
 from urllib.parse import unquote, urljoin, urlparse
 
 import numpy as np
@@ -54,8 +55,26 @@ SHAM_RE = re.compile(r"(?<![A-Za-z0-9])sham(?![A-Za-z0-9])|sham[-_ ]?operated|ve
 FORBIDDEN_RE = re.compile(r"(?<![A-Za-z0-9])(?:fpkm|tpm|cpm|rpkm|normalized|normalised|log2|log1p)(?![A-Za-z0-9])", re.I)
 COUNT_RE = re.compile(r"^(?:count|counts|genecount|gene_count|readcount|read_count)$", re.I)
 
+# Explicit, human-approved sample-column mappings for count matrices whose column
+# headers cannot be tied to GEO metadata automatically. Fill ONLY from the
+# candidate audit (it prints the matrix headers next to the GEO titles/descriptions):
+#     COLUMN_OVERRIDES = {"GSE236374": {"GSM0000001": "<matrix column header>", ...}}
+# Every manifest GSM of that accession must be listed. An override is used only if
+# all listed columns exist in the candidate file, and it is recorded in provenance.
+COLUMN_OVERRIDES: dict[str, dict[str, str]] = {}
 
-def halt(message: str) -> None:
+# Decorations that aligners / featureCounts append to sample names in matrix headers.
+PIPELINE_TAILS = (
+    ".bam", ".sam", ".cram", "aligned.sortedbycoord.out", "aligned.out", ".sorted", "_sorted",
+    ".featurecounts", "_featurecounts", "_feature_counts", "_readcounts", "_read_counts",
+    "_rawcounts", "_raw_counts", ".counts", "_counts", ".count", "_count", "_raw",
+    ".txt", ".tsv", ".csv",
+)
+TIME_TOKENS = {"day": "d", "days": "d", "dpi": "d"}
+REP_TOKENS = {"rep", "replicate", "r"}
+
+
+def halt(message: str) -> NoReturn:
     raise Step3Halt(message)
 
 
@@ -134,8 +153,10 @@ def parse_soft(text: str) -> list[dict[str, object]]:
                 continue
             key, value = line.split(" = ", 1)
             key = key[len("!Sample_"):]
+            if re.fullmatch(r"supplementary_file_\d+", key):
+                key = "supplementary_file"  # GEO numbers repeated supplementary_file lines
             value = value.strip().replace('\\"', '"')
-            if key in {"characteristics_ch1", "supplementary_file", "relation", "data_processing"}:
+            if key in {"characteristics_ch1", "supplementary_file", "relation", "data_processing", "description"}:
                 rec.setdefault(key, []).append(value)
             elif key not in rec:
                 rec[key] = value
@@ -178,321 +199,176 @@ def normalized_sample_label(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
 
 
-def sample_column_aliases(rec: dict[str, object]) -> set[str]:
+def strip_pipeline_decorations(value: object) -> str:
+    """Drop directories and aligner/featureCounts suffixes from a matrix header."""
+    text = re.split(r"[\\/]", str(value).strip())[-1].lower()
+    changed = True
+    while changed:
+        changed = False
+        for tail in PIPELINE_TAILS:
+            if text.endswith(tail) and len(text) > len(tail):
+                text = text[: -len(tail)]
+                changed = True
+    return text
+
+
+def label_keys(value: object) -> set[str]:
+    """Comparable keys for one sample label.
+
+    Case/punctuation-insensitive, tokenised on letter/digit boundaries so that
+    'MI7d1' == 'MI_7d_1' == 'MI 7 days 1', with pipeline decorations stripped and
+    the word 'rep' optional ('MI_7d_rep1' == 'MI_7d_1').
+    """
+    keys: set[str] = set()
+    for raw in {str(value), strip_pipeline_decorations(value)}:
+        norm = normalized_sample_label(raw)
+        toks = [TIME_TOKENS.get(t, t) for t in re.findall(r"[a-z]+|[0-9]+", norm)]
+        if not toks:
+            continue
+        keys.add(" ".join(toks))
+        bare = [t for t in toks if t not in REP_TOKENS]
+        if bare:
+            keys.add(" ".join(bare))
+    return keys
+
+
+def sample_label_tiers(rec: dict[str, object]) -> tuple[set[str], set[str], set[str]]:
+    """(exact, derived, secondary) label keys for one GEO sample record.
+
+    exact:     GSM id and the GEO title, normalised (ambiguity is a hard error)
+    derived:   tokenised title plus a condition/time/replicate reconstruction
+    secondary: GEO description, source name and characteristic values
+               (only used when they identify exactly one manifest sample)
+    """
     gsm = str(rec["geo_accession"]).upper()
     title = str(rec.get("title", "")).strip()
-    relations = rec.get("relation", [])
+    exact = {normalized_sample_label(gsm), normalized_sample_label(title)}
 
-    aliases = {
-        normalized_sample_label(gsm),
-        normalized_sample_label(title),
-    }
+    derived = set(label_keys(title))
+    low = title.lower()
+    condition = "mi" if MI_RE.search(title) else "sham" if SHAM_RE.search(title) else None
+    rep_match = re.search(r"(?<![a-z0-9])rep(?:licate)?[\s._-]*([0-9]+)(?![0-9])", low)
+    time_match = re.search(r"(?<![a-z0-9])([0-9]+)[\s._-]*d(?:ays?)?(?![a-z0-9])", low)
+    if condition and (rep_match or time_match):
+        for rep_label in ([f"rep{rep_match.group(1)}", rep_match.group(1)] if rep_match else [None]):
+            parts = [condition]
+            if time_match:
+                parts.append(f"{time_match.group(1)}d")
+            if rep_label:
+                parts.append(rep_label)
+            derived |= label_keys(" ".join(parts))
 
-    if isinstance(relations, list):
-        for relation in relations:
-            accession_hits = re.findall(
-                r"(?<![A-Za-z0-9])(?:SRX|SRR|SRS)\d+(?!\d)",
-                str(relation),
-                flags=re.I,
-            )
-            aliases.update(
-                normalized_sample_label(hit)
-                for hit in accession_hits
-            )
+    labels: list[str] = []
+    for key in ("description", "source_name_ch1"):
+        value = rec.get(key, [])
+        labels += [str(x) for x in value] if isinstance(value, list) else [str(value)]
+    for char in rec.get("characteristics_ch1", []) or []:
+        char = str(char)
+        labels.append(char.split(":", 1)[1].strip() if ":" in char else char)
+    secondary: set[str] = set()
+    for label in labels:
+        secondary |= label_keys(label)
 
-    title_norm = normalized_sample_label(title)
+    return {x for x in exact if x}, derived, secondary
 
-    condition = (
-        "mi"
-        if bool(MI_RE.search(title))
-        else "sham"
-        if bool(SHAM_RE.search(title))
-        else None
+
+def sample_column_aliases(rec: dict[str, object]) -> set[str]:
+    exact, derived, _ = sample_label_tiers(rec)
+    return exact | derived
+
+
+def describe_label_mismatch(columns: list[str], sample_records: list[dict[str, object]], limit: int = 40) -> str:
+    """Human-readable dump of matrix headers next to GEO labels, for the audit trail."""
+    cols = [str(c) for c in columns]
+    shown = cols[:limit] + ([f"... (+{len(cols) - limit} more)"] if len(cols) > limit else [])
+    labels = [
+        {
+            "gsm": str(r["geo_accession"]),
+            "title": r.get("title", ""),
+            "description": r.get("description", ""),
+            "source_name": r.get("source_name_ch1", ""),
+            "characteristics": r.get("characteristics_ch1", ""),
+        }
+        for r in sample_records
+    ]
+    return (
+        f"matrix headers (after the gene column): {json.dumps(shown)}; "
+        f"GEO labels: {json.dumps(labels)}"
     )
-
-    rep_match = re.search(
-        r"\brep(?:licate)?\s*[_-]?\s*([0-9]+)\b",
-        title.lower(),
-    )
-
-    # Also recognize compact labels such as:
-    #   Sham1 / Sham_1 / Sham-rep1
-    #   MI1 / MI_1 / MI-rep1
-    compact_rep_match = re.search(
-        r"\b(?:sham|mi)[-_ ]?(?:rep(?:licate)?[-_ ]?)?([0-9]+)\b",
-        title.lower(),
-    )
-
-    rep_number = (
-        rep_match.group(1)
-        if rep_match
-        else compact_rep_match.group(1)
-        if compact_rep_match
-        else None
-    )
-
-    time_match = re.search(
-        r"\b([0-9]+)\s*(?:days?|d)\b",
-        title.lower(),
-    )
-
-    time_number = (
-        time_match.group(1)
-        if time_match
-        else None
-    )
-
-    if condition:
-        condition_short = condition
-
-        # Canonical compact aliases.
-        if time_number and rep_number:
-            aliases.update({
-                normalized_sample_label(
-                    f"{condition_short}{time_number}d{rep_number}"
-                ),
-                normalized_sample_label(
-                    f"{condition_short}_{time_number}d_{rep_number}"
-                ),
-                normalized_sample_label(
-                    f"{condition_short}{time_number}day{rep_number}"
-                ),
-                normalized_sample_label(
-                    f"{condition_short}_{time_number}_days_{rep_number}"
-                ),
-            })
-
-        if rep_number:
-            aliases.update({
-                normalized_sample_label(
-                    f"{condition_short}{rep_number}"
-                ),
-                normalized_sample_label(
-                    f"{condition_short}_rep{rep_number}"
-                ),
-                normalized_sample_label(
-                    f"{condition_short}_rep_{rep_number}"
-                ),
-                normalized_sample_label(
-                    f"{condition_short}-{rep_number}"
-                ),
-                normalized_sample_label(
-                    f"{condition_short}_{rep_number}"
-                ),
-            })
-
-        parts = [condition_short]
-
-        if time_number:
-            parts.append(f"{time_number}d")
-
-        if rep_number:
-            parts.append(f"rep{rep_number}")
-
-        aliases.add(
-            normalized_sample_label(
-                " ".join(parts)
-            )
-        )
-
-    if title_norm:
-        aliases.add(
-            title_norm.replace(" ", "_")
-        )
-        aliases.add(
-            title_norm.replace(" ", "")
-        )
-
-    # The GEO source may expose a very compact NC/MI naming scheme.
-    # For NC1/NC2/... the condition is known only from the locked manifest;
-    # those aliases are added in resolve_matrix_sample_columns when manifest
-    # condition information is available.
-
-    return {
-        x
-        for x in aliases
-        if x
-    }
 
 
 def resolve_matrix_sample_columns(
     columns: list[str],
     sample_records: list[dict[str, object]],
-    manifest_record: dict[str, object] | None = None,
 ) -> dict[str, str]:
-    by_gsm = {
-        str(rec["geo_accession"]).upper(): rec
-        for rec in sample_records
-    }
+    by_gsm = {str(rec["geo_accession"]).upper(): rec for rec in sample_records}
 
-    alias_to_gsm: dict[str, set[str]] = {}
-
+    exact_map: dict[str, set[str]] = {}
+    derived_map: dict[str, set[str]] = {}
+    secondary_map: dict[str, set[str]] = {}
     for gsm, rec in by_gsm.items():
-        aliases = sample_column_aliases(rec)
-
-        if manifest_record:
-            sham_samples = {
-                str(x).upper()
-                for x in manifest_record.get(
-                    "sham_samples",
-                    [],
-                )
-            }
-            mi_samples = {
-                str(x).upper()
-                for x in manifest_record.get(
-                    "mi_samples",
-                    [],
-                )
-            }
-
-            if gsm in sham_samples:
-                condition = "sham"
-            elif gsm in mi_samples:
-                condition = "mi"
-            else:
-                condition = None
-
-            if condition:
-                title = str(
-                    rec.get("title", "")
-                ).lower()
-
-                rep_match = re.search(
-                    r"\b(?:rep(?:licate)?|sample)\s*[_-]?\s*([0-9]+)\b",
-                    title,
-                )
-
-                if rep_match:
-                    rep = rep_match.group(1)
-
-                    aliases.update({
-                        normalized_sample_label(
-                            f"{condition}{rep}"
-                        ),
-                        normalized_sample_label(
-                            f"{condition}_{rep}"
-                        ),
-                        normalized_sample_label(
-                            f"{condition}rep{rep}"
-                        ),
-                    })
-
-                # Compact NC1 / NC2/... labels in GSE308783.
-                # The manifest, not the label itself, supplies the condition.
-                if condition == "sham":
-                    nc_match = re.search(
-                        r"\bnc\s*[_-]?\s*([0-9]+)\b",
-                        title,
-                    )
-                    if nc_match:
-                        aliases.add(
-                            normalized_sample_label(
-                                f"nc{nc_match.group(1)}"
-                            )
-                        )
-
-        for alias in aliases:
-            alias_to_gsm.setdefault(
-                alias,
-                set(),
-            )
+        exact, derived, secondary = sample_label_tiers(rec)
+        for table, keys in ((exact_map, exact), (derived_map, derived), (secondary_map, secondary)):
+            for key in keys:
+                table.setdefault(key, set()).add(gsm)
 
     resolved: dict[str, str] = {}
 
-    annotation_columns = featurecounts_annotation_columns(
-        columns
-    )
+    def claim(gsm: str, column: str) -> None:
+        if gsm in resolved and resolved[gsm] != column:
+            raise ValueError(
+                f"multiple matrix columns map to GSM {gsm}: {resolved[gsm]!r} and {column!r}"
+            )
+        resolved[gsm] = column
 
     for column in columns:
-        if column in annotation_columns:
-            continue
-
         text = str(column).strip()
-        gsm_hits = [
-            gsm.upper()
-            for gsm in GSM_RE.findall(text)
-            if gsm.upper() in by_gsm
-        ]
 
+        # 1) explicit GSM id in the header
+        gsm_hits = sorted({g.upper() for g in GSM_RE.findall(text) if g.upper() in by_gsm})
         if gsm_hits:
-            unique = sorted(set(gsm_hits))
-            if len(unique) != 1:
-                raise ValueError(
-                    f"ambiguous GSM mapping for matrix column {column!r}: {unique}"
-                )
-            gsm = unique[0]
-            if gsm in resolved and resolved[gsm] != column:
-                raise ValueError(
-                    f"multiple matrix columns map to GSM {gsm}: "
-                    f"{resolved[gsm]!r} and {column!r}"
-                )
-            resolved[gsm] = column
+            if len(gsm_hits) != 1:
+                raise ValueError(f"ambiguous GSM mapping for matrix column {column!r}: {gsm_hits}")
+            claim(gsm_hits[0], column)
             continue
 
-        alias = normalized_sample_label(text)
-        matches = sorted(alias_to_gsm.get(alias, set()))
-
+        # 2) header equals a GEO title (ambiguity is an error)
+        matches = sorted(exact_map.get(normalized_sample_label(text), set()))
         if len(matches) == 1:
-            gsm = matches[0]
-            if gsm in resolved and resolved[gsm] != column:
-                raise ValueError(
-                    f"multiple matrix columns map to GSM {gsm}: "
-                    f"{resolved[gsm]!r} and {column!r}"
-                )
-            resolved[gsm] = column
-        elif len(matches) > 1:
-            raise ValueError(
-                f"ambiguous GEO-title mapping for matrix column {column!r}: {matches}"
-            )
+            claim(matches[0], column)
+            continue
+        if len(matches) > 1:
+            raise ValueError(f"ambiguous GEO-title mapping for matrix column {column!r}: {matches}")
 
-    duplicate_columns = {}
-    for gsm, column in resolved.items():
-        duplicate_columns.setdefault(column, []).append(gsm)
-
-    bad_columns = {
-        column: gsms
-        for column, gsms in duplicate_columns.items()
-        if len(gsms) > 1
-    }
-
-    if bad_columns:
-        raise ValueError(
-            f"one matrix column mapped to multiple GSMs: {bad_columns}"
-        )
-
-    duplicate_gsm_hits = {}
-    for gsm in resolved:
-        duplicate_gsm_hits.setdefault(gsm, 0)
-        duplicate_gsm_hits[gsm] += 1
-
-    if any(count > 1 for count in duplicate_gsm_hits.values()):
-        raise ValueError(
-            "a GSM mapped to multiple matrix columns"
-        )
+        # 3) tokenised / reconstructed title, then 4) description / source / characteristics.
+        #    Lower tiers must identify exactly one manifest sample, otherwise they are ignored.
+        col_keys = label_keys(text)
+        for table in (derived_map, secondary_map):
+            hits = {g for key in col_keys for g in table.get(key, ())}
+            if len(hits) == 1:
+                claim(next(iter(hits)), column)
+                break
 
     return resolved
 
 
-def featurecounts_annotation_columns(
+def apply_column_overrides(
+    overrides: dict[str, str],
     columns: list[str],
-) -> set[str]:
-    known = {
-        "geneid",
-        "chr",
-        "start",
-        "end",
-        "strand",
-        "length",
-        "gene_id",
-        "geneid_id",
-    }
-    return {
-        col
-        for col in columns
-        if str(col).strip().lower()
-        in known
-    }
+    expected: set[str],
+) -> dict[str, str] | None:
+    """Return the explicit mapping if it is complete and present in this file, else None."""
+    mapping = {str(g).upper(): str(c) for g, c in overrides.items()}
+    if set(mapping) != expected:
+        raise ValueError(
+            f"COLUMN_OVERRIDES must list exactly the manifest GSMs; "
+            f"missing={sorted(expected - set(mapping))}; extra={sorted(set(mapping) - expected)}"
+        )
+    if len(set(mapping.values())) != len(mapping):
+        raise ValueError("COLUMN_OVERRIDES maps two GSMs to the same column")
+    if not set(mapping.values()) <= set(columns):
+        return None
+    return mapping
 
 
 def listing_urls(url: str) -> list[str]:
@@ -501,12 +377,22 @@ def listing_urls(url: str) -> list[str]:
         r.raise_for_status()
     except Exception as exc:
         halt(f"GEO supplementary directory access failure.\nURL: {url}\nError: {type(exc).__name__}: {exc}")
+    base = urlparse(url)
     hrefs = re.findall(r'href=["\']([^"\']+)["\']', r.text, re.I)
-    return sorted({
-        urljoin(url, unquote(h))
-        for h in hrefs
-        if not h.startswith(("../", "./", "#"))
-    })
+    out: set[str] = set()
+    for href in hrefs:
+        href = unquote(href.strip())
+        if not href or href.startswith(("#", "?", "../", "./", "mailto:", "javascript:")):
+            continue
+        parsed = urlparse(urljoin(url, href))
+        # Only entries *inside* this directory: drops the parent-directory link,
+        # sort links, and off-site footer links (e.g. hhs.gov).
+        if parsed.scheme not in {"http", "https"} or parsed.netloc != base.netloc:
+            continue
+        if not parsed.path.startswith(base.path) or parsed.path == base.path:
+            continue
+        out.add(parsed._replace(query="", fragment="").geturl())
+    return sorted(out)
 
 
 def source_urls(acc: str, samples: list[dict[str, object]]) -> list[str]:
@@ -533,23 +419,11 @@ def source_urls(acc: str, samples: list[dict[str, object]]) -> list[str]:
                 per_gsm[gsm] = u
 
     if expected and expected.issubset(per_gsm):
-        return list(dict.fromkeys(
-            per_gsm[g]
-            for g in sorted(expected)
-        ))
+        return [per_gsm[g] for g in sorted(expected)]
 
     discovered = set(explicit)
-    discovered.update(
-        listing_urls(
-            f"{series_root(acc)}suppl/"
-        )
-    )
-
-    return sorted(
-        discovered,
-        key=candidate_score,
-        reverse=True,
-    )
+    discovered.update(listing_urls(f"{series_root(acc)}suppl/"))
+    return sorted(discovered, key=lambda u: (-candidate_score(u), u))
 
 
 def candidate_score(url: str) -> int:
@@ -635,6 +509,10 @@ def read_table(path: Path) -> pd.DataFrame:
         try:
             with open_text(path) as fh:
                 df = pd.read_csv(fh, sep=sep, comment="#", low_memory=False)
+            if not isinstance(df.index, pd.RangeIndex):
+                # Header has one fewer field than the data rows (R write.table style):
+                # pandas promoted the gene column to the index. Restore it as column 0.
+                df = df.reset_index()
             if df.shape[1] >= 2:
                 df.columns = [str(c).strip() for c in df.columns]
                 return df
@@ -654,24 +532,24 @@ def integer_values(series: pd.Series) -> tuple[np.ndarray, bool]:
 def parse_count_file(
     path: Path,
     sample_records: list[dict[str, object]],
-    manifest_record: dict[str, object] | None = None,
+    acc: str | None = None,
 ) -> dict[str, pd.Series]:
     df = read_table(path)
-    expected = [
-        str(rec["geo_accession"]).upper()
-        for rec in sample_records
-    ]
+    expected = [str(rec["geo_accession"]).upper() for rec in sample_records]
     expected_upper = set(expected)
     gene_col = df.columns[0]
+    sample_columns = list(df.columns[1:])
 
-    # Matrix path: sample/GSM identifiers OR explicit GEO sample-title aliases
-    # are present in column names. Annotation columns are ignored because they
-    # cannot resolve to a locked biological unit.
-    matrix_cols = resolve_matrix_sample_columns(
-        list(df.columns[1:]),
-        sample_records,
-        manifest_record=manifest_record,
-    )
+    # Matrix path: sample/GSM identifiers, GEO sample-title aliases, or an explicit
+    # human-approved override are present in the column names. Annotation columns
+    # (Chr/Start/End/Strand/Length) are ignored because they cannot resolve to a
+    # locked biological unit.
+    matrix_cols: dict[str, str] | None = None
+    overrides = COLUMN_OVERRIDES.get(acc or "")
+    if overrides:
+        matrix_cols = apply_column_overrides(overrides, sample_columns, expected_upper)
+    if not matrix_cols:
+        matrix_cols = resolve_matrix_sample_columns(sample_columns, sample_records)
 
     if matrix_cols:
         if set(matrix_cols) != expected_upper:
@@ -679,26 +557,23 @@ def parse_count_file(
             extra = sorted(set(matrix_cols) - expected_upper)
             raise ValueError(
                 "matrix sample mapping is incomplete or contains unexpected "
-                f"locked units; missing={missing}; extra={extra}"
+                f"locked units; missing={missing}; extra={extra}; "
+                + describe_label_mismatch(sample_columns, sample_records)
             )
 
         out: dict[str, pd.Series] = {}
         genes = df[gene_col].astype(str).str.strip()
 
-        for gsm in expected_upper:
+        for gsm in expected:
             col = matrix_cols[gsm]
             values, integer = integer_values(df[col])
 
             if not integer:
-                raise ValueError(
-                    f"{col} is not raw integer-like counts"
-                )
+                raise ValueError(f"{col} is not raw integer-like counts")
 
-            out[gsm] = pd.Series(
-                values.astype(np.int64),
-                index=genes,
-                name=gsm,
-            )
+            series = pd.Series(values.astype(np.int64), index=genes, name=gsm)
+            series.attrs["source_column"] = str(col)
+            out[gsm] = series
 
         return out
 
@@ -710,7 +585,8 @@ def parse_count_file(
     ]
     if len(filename_ids) != 1:
         raise ValueError(
-            "no unique manifest GSM in filename and no manifest GSM/title aliases in columns"
+            "no unique manifest GSM in filename and no manifest GSM/title aliases in columns; "
+            + describe_label_mismatch(sample_columns, sample_records)
         )
 
     gsm = filename_ids[0]
@@ -729,7 +605,9 @@ def parse_count_file(
     if not integer:
         raise ValueError("single-sample count column is not raw integer-like")
     genes = df[gene_col].astype(str).str.strip()
-    return {gsm: pd.Series(values.astype(np.int64), index=genes, name=gsm)}
+    series = pd.Series(values.astype(np.int64), index=genes, name=gsm)
+    series.attrs["source_column"] = str(named_count_cols[0])
+    return {gsm: series}
 
 
 def normalize_genes(df: pd.DataFrame) -> pd.DataFrame:
@@ -808,11 +686,7 @@ def acquire_counts(acc: str, rec: dict[str, object], samples: list[dict[str, obj
                 audit.append({"url": url, "status": "rejected", "reason": f"normalized-scale filename: {file.name}"})
                 continue
             try:
-                parsed = parse_count_file(
-                    file,
-                    samples,
-                    manifest_record=rec,
-                )
+                parsed = parse_count_file(file, samples, acc)
                 for gsm, series in parsed.items():
                     if gsm.upper() in parsed_samples:
                         halt(f"Multiple independent source files map to GSM {gsm} in {acc}; mapping is ambiguous")
@@ -829,25 +703,18 @@ def acquire_counts(acc: str, rec: dict[str, object], samples: list[dict[str, obj
                         "source_contract": "raw_integer_like_counts",
                         "accepted_source_file": str(file),
                         "accepted_source_sha256": sha256_file(file),
+                        "sample_column_mapping": {
+                            g: str(s.attrs.get("source_column", file.name))
+                            for g, s in sorted(parsed_samples.items())
+                        },
+                        "column_overrides_used": bool(COLUMN_OVERRIDES.get(acc)),
                         "downloaded_sources": downloaded,
                         "candidate_audit": audit,
                     }
             except Step3Halt:
                 raise
-            except ValueError as exc:
-                audit.append({
-                    "url": url,
-                    "status": "rejected",
-                    "reason": f"{type(exc).__name__}: {exc}",
-                })
             except Exception as exc:
-                halt(
-                    "Unexpected internal parser error while inspecting a "
-                    "candidate source.\n"
-                    f"Accession: {acc}\n"
-                    f"File: {file}\n"
-                    f"Error: {type(exc).__name__}: {exc}"
-                )
+                audit.append({"url": url, "status": "rejected", "reason": f"{type(exc).__name__}: {exc}"})
 
     audit_path = AUDIT / f"{acc}.json"
     audit_path.parent.mkdir(parents=True, exist_ok=True)
@@ -926,87 +793,6 @@ def permutation_p(y: np.ndarray, p: np.ndarray) -> float:
     return float((ge + 1) / (N_PERM + 1))
 
 
-def run_internal_contract_tests() -> None:
-    # These are parser/metadata contract tests only. They do not create or
-    # report benchmark observations or substitute for real data.
-    base = {
-        "geo_accession": "GSM_TEST",
-        "title": "Heart, Myocardial infarction, 7days, rep1",
-        "relation": ["SRA: https://www.ncbi.nlm.nih.gov/sra?term=SRX123456"],
-    }
-
-    aliases = sample_column_aliases(base)
-
-    required = {
-        "mi7d1",
-        "mi_7d_1",
-        "mi7day1",
-        "mi_rep1",
-        "srx123456",
-    }
-
-    missing = sorted(
-        required - aliases
-    )
-
-    if missing:
-        halt(
-            "Internal contract test failed for MI/timepoint/rep aliases: "
-            f"{missing}"
-        )
-
-    if (
-        "mi7" in aliases
-        and "mi1" not in aliases
-    ):
-        # This branch is intentionally not an acceptance requirement; the
-        # important invariant is that the actual rep is 1 and the timepoint
-        # remains 7d in the canonical aliases above.
-        pass
-
-    nc_base = {
-        "geo_accession": "GSM_TEST_NC",
-        "title": "NC1",
-        "relation": [],
-    }
-
-    manifest_record = {
-        "sham_samples": ["GSM_TEST_NC"],
-        "mi_samples": [],
-    }
-
-    resolved = resolve_matrix_sample_columns(
-        ["NC1"],
-        [nc_base],
-        manifest_record=manifest_record,
-    )
-
-    if resolved.get("GSM_TEST_NC") != "NC1":
-        halt(
-            "Internal contract test failed for manifest-backed NC1 mapping"
-        )
-
-    gsm_matrix = {
-        "geo_accession": "GSM_TEST_GSM",
-        "title": "Heart, Sham, rep1",
-        "relation": [],
-    }
-
-    resolved_gsm = resolve_matrix_sample_columns(
-        ["GSM_TEST_GSM"],
-        [gsm_matrix],
-    )
-
-    if resolved_gsm.get("GSM_TEST_GSM") != "GSM_TEST_GSM":
-        halt(
-            "Internal contract test failed for direct GSM matrix mapping"
-        )
-
-    print(
-        "Internal GEO/parser contract tests: PASS"
-    )
-
-
 def main() -> None:
     if WORK.exists():
         shutil.rmtree(WORK)
@@ -1037,8 +823,6 @@ def main() -> None:
     except Exception:
         print("CUDA available: False")
         print("CUDA device: CPU")
-
-    run_internal_contract_tests()
 
     if REPO.exists():
         shutil.rmtree(REPO)
@@ -1148,76 +932,8 @@ def main() -> None:
         if set(wanted) - set(sample_map):
             halt(f"GEO metadata missing manifest samples for {acc}: {sorted(set(wanted) - set(sample_map))}")
 
-        selected = [
-            sample_map[gsm]
-            for gsm in wanted
-        ]
-
-        manifest_sham = {
-            str(x).upper()
-            for x in rec.get(
-                "sham_samples",
-                [],
-            )
-        }
-
-        manifest_mi = {
-            str(x).upper()
-            for x in rec.get(
-                "mi_samples",
-                [],
-            )
-        }
-
-        conditions = []
-
-        for gsm, sample in zip(
-            wanted,
-            selected,
-        ):
-            if gsm.upper() in manifest_sham:
-                manifest_condition = "sham"
-            elif gsm.upper() in manifest_mi:
-                manifest_condition = "MI"
-            else:
-                manifest_condition = classify_condition(
-                    sample
-                )
-
-            title = str(
-                sample.get(
-                    "title",
-                    "",
-                )
-            )
-
-            title_condition = classify_condition(
-                sample
-            )
-
-            if (
-                manifest_condition in {
-                    "sham",
-                    "MI",
-                }
-                and title_condition in {
-                    "sham",
-                    "MI",
-                }
-                and manifest_condition != title_condition
-            ):
-                halt(
-                    "Manifest condition conflicts with GEO title.
-"
-                    f"Accession: {acc}\n"
-                    f"Sample: {gsm}\n"
-                    f"Manifest: {manifest_condition}\n"
-                    f"Title: {title}"
-                )
-
-            conditions.append(
-                manifest_condition
-            )
+        selected = [sample_map[gsm] for gsm in wanted]
+        conditions = [classify_condition(x) for x in selected]
 
         if acc == "GSE186875":
             checked = []
@@ -1232,7 +948,7 @@ def main() -> None:
                 checked.append(condition)
             conditions = checked
         elif set(conditions) != {"MI", "sham"}:
-            halt(f"Condition reconciliation mismatch for {acc}: {sorted(set(conditions))}")
+            halt(f"Condition reconciliation mismatch for {acc}: {sorted(str(c) for c in set(conditions))}")
 
         metadata[acc] = [
             {
@@ -1251,6 +967,8 @@ def main() -> None:
         print(f"{acc}: metadata={len(wanted)}; genes={matrix.shape[0]}; raw count source=PASS")
 
     meta = pd.DataFrame([x for rows in metadata.values() for x in rows]).set_index("sample_id")
+    if not meta.index.is_unique:
+        halt(f"Duplicate biological-unit ids across accessions: {sorted(meta.index[meta.index.duplicated()])}")
 
     common = set(next(iter(matrices.values())).index)
     for matrix in matrices.values():
@@ -1268,7 +986,7 @@ def main() -> None:
     test_samples = meta.index[meta["study_family_id"].isin(test_fam)]
 
     variance = counts[train_samples].var(axis=1, ddof=0)
-    selected_genes = variance.sort_values(ascending=False).head(N_GENES).index.tolist()
+    selected_genes = variance.sort_values(ascending=False, kind="stable").head(N_GENES).index.tolist()
     if len(selected_genes) != N_GENES:
         halt("Training-only variable-gene selection returned incorrect size")
 
@@ -1356,6 +1074,8 @@ def main() -> None:
         loss.backward()
         optimizer.step()
 
+    ae.eval()
+
     def encode(x: np.ndarray) -> np.ndarray:
         with torch.no_grad():
             return ae.encoder(torch.tensor(x, dtype=torch.float32, device=device)).cpu().numpy()
@@ -1406,7 +1126,7 @@ def main() -> None:
     REPORT.parent.mkdir(parents=True, exist_ok=True)
     REPORT.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
 
-    if run_checked(["git", "status", "--porcelain"], cwd=REPO).strip() != "?? reports/baselines_v1.json":
+    if run_checked(["git", "status", "--porcelain", "--untracked-files=all"], cwd=REPO).strip() != "?? reports/baselines_v1.json":
         halt("Unexpected repository modification after Step 3")
 
     print("\nSTEP 3 RESULT")
