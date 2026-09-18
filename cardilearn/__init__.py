@@ -4,6 +4,7 @@ __version__ = "0.4.1"
 
 from .backbones import EXTERNAL_ENCODERS, CallableEncoderAdapter, EncoderAdapter, ExternalEncoderSpec, known_external_encoder_names, wrap_object
 from .benchmark_protocol import BenchmarkSpec, compare_seeded_scores, rank_models, summarize_repeated_scores
+from .conserved import ConservedGeneIdentity, GeneGroupMap, functional_group_pool, validate_gene_group_map
 from .config_loader import ConfigError, load_yaml_config, validate_reproducibility_config
 from .dataset_card import DatasetCard
 from .fusion import align_modalities, concatenate_embeddings
@@ -20,7 +21,9 @@ from .reproducibility import (
     make_manifest,
     save_manifest,
 )
+from .spatial import NeighborhoodAggregator, SpatialGraph, knn_graph
 from .schema import DatasetSpec, FeatureManifest
+from .trajectory import TemporalSplit, forward_group_split, trajectory_spearman
 from .validation import IntegrityReport, validate_dataset
 
 try:  # pragma: no cover - depends on optional torch installation
@@ -52,6 +55,7 @@ except ImportError:
 __all__ = [
     "BenchmarkSpec",
     "CardiacFusionCore",
+    "ConservedGeneIdentity", "GeneGroupMap", "functional_group_pool", "validate_gene_group_map",
     "CardiLearnResearch",
     "CardiLearnX",
     "CallableEncoderAdapter",
@@ -71,6 +75,7 @@ __all__ = [
     "ObjectiveSchedule", "ObjectiveStage", "ObjectiveWeights",    "ProgramBackbone",
     "ReproducibilityManifest",
     "SignalPatchEncoder",
+    "SpatialGraph", "NeighborhoodAggregator", "knn_graph",
     "Waveform",
     "align_modalities",
     "compare_seeded_scores",
@@ -88,6 +93,7 @@ __all__ = [
     "rank_models",
     "save_manifest",
     "summarize_repeated_scores",
+    "TemporalSplit", "forward_group_split", "trajectory_spearman",
     "validate_dataset",
     "validate_reproducibility_config",
     "wrap_object",
