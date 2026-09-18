@@ -238,14 +238,26 @@ def resolve_matrix_sample_columns(
                 raise ValueError(
                     f"ambiguous GSM mapping for matrix column {column!r}: {unique}"
                 )
-            resolved[unique[0]] = column
+            gsm = unique[0]
+            if gsm in resolved and resolved[gsm] != column:
+                raise ValueError(
+                    f"multiple matrix columns map to GSM {gsm}: "
+                    f"{resolved[gsm]!r} and {column!r}"
+                )
+            resolved[gsm] = column
             continue
 
         alias = normalized_sample_label(text)
         matches = sorted(alias_to_gsm.get(alias, set()))
 
         if len(matches) == 1:
-            resolved[matches[0]] = column
+            gsm = matches[0]
+            if gsm in resolved and resolved[gsm] != column:
+                raise ValueError(
+                    f"multiple matrix columns map to GSM {gsm}: "
+                    f"{resolved[gsm]!r} and {column!r}"
+                )
+            resolved[gsm] = column
         elif len(matches) > 1:
             raise ValueError(
                 f"ambiguous GEO-title mapping for matrix column {column!r}: {matches}"
@@ -444,10 +456,19 @@ def parse_count_file(
     )
 
     if matrix_cols:
+        if set(matrix_cols) != expected_upper:
+            missing = sorted(expected_upper - set(matrix_cols))
+            extra = sorted(set(matrix_cols) - expected_upper)
+            raise ValueError(
+                "matrix sample mapping is incomplete or contains unexpected "
+                f"locked units; missing={missing}; extra={extra}"
+            )
+
         out: dict[str, pd.Series] = {}
         genes = df[gene_col].astype(str).str.strip()
 
-        for gsm, col in matrix_cols.items():
+        for gsm in expected_upper:
+            col = matrix_cols[gsm]
             values, integer = integer_values(df[col])
 
             if not integer:
@@ -574,7 +595,11 @@ def acquire_counts(acc: str, rec: dict[str, object], samples: list[dict[str, obj
                     if gsm.upper() in parsed_samples:
                         halt(f"Multiple independent source files map to GSM {gsm} in {acc}; mapping is ambiguous")
                     parsed_samples[gsm.upper()] = series
-                audit.append({"url": url, "status": "accepted", "reason": file.name})
+                audit.append({
+                    "url": url,
+                    "status": "accepted",
+                    "reason": file.name,
+                })
 
                 if {x.upper() for x in parsed_samples} == {x.upper() for x in expected}:
                     matrix = combine_series(parsed_samples, expected)
