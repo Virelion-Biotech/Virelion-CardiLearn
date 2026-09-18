@@ -70,3 +70,16 @@ def test_bootstrap_metric_can_resample_biological_groups():
     result = bootstrap_metric(y, score, groups=groups, n_bootstrap=50, seed=1)
     assert result["n_valid"] > 0
     assert result["ci95_low"] <= result["ci95_high"]
+
+
+def test_bootstrap_metric_rejects_mixed_labels_within_biological_group():
+    import numpy as np
+    import pytest
+    from cardilearn.representation_benchmark import bootstrap_metric
+    with pytest.raises(ValueError, match="exactly one target label"):
+        bootstrap_metric(
+            np.array([0, 1, 1, 0]),
+            np.array([0.1, 0.9, 0.8, 0.2]),
+            groups=np.array(["s1", "s1", "s2", "s2"]),
+            n_bootstrap=10,
+        )
