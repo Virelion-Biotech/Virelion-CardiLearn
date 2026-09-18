@@ -218,6 +218,8 @@ def permutation_null_auroc(
     if n_permutations < 1:
         raise ValueError("n_permutations must be positive")
     labels = np.asarray(list(y))
+    if labels.size == 0:
+        raise ValueError("y cannot be empty")
     observed = benchmark_embedding(
         z,
         labels,
@@ -237,7 +239,13 @@ def permutation_null_auroc(
             rng.shuffle(shuffled)
         else:
             unique_groups = np.unique(group_values)
-            group_labels = {group: labels[np.where(group_values == group)[0][0]] for group in unique_groups}
+            group_labels = {}
+            for group in unique_groups:
+                indices = np.where(group_values == group)[0]
+                group_y = labels[indices]
+                if np.unique(group_y).size != 1:
+                    raise ValueError("each biological group must have exactly one class label")
+                group_labels[group] = group_y[0]
             permuted_values = list(group_labels.values())
             rng.shuffle(permuted_values)
             mapping = dict(zip(unique_groups, permuted_values))
@@ -278,6 +286,10 @@ def bootstrap_metric(
 ) -> dict[str, float | int | list[float]]:
     y = np.asarray(list(y_true))
     score = np.asarray(list(y_score), dtype=float)
+    if y.size == 0:
+        raise ValueError("bootstrap inputs cannot be empty")
+    if not np.isfinite(score).all():
+        raise ValueError("y_score contains non-finite values")
     if y.shape != score.shape:
         raise ValueError("y_true and y_score must have matching shapes")
     if n_bootstrap < 1:
