@@ -58,6 +58,11 @@ class SignalPatchEncoder(nn.Module):
     def forward(self, signal: torch.Tensor) -> torch.Tensor:
         if signal.ndim != 3:
             raise ValueError("signal must have shape [batch, channels, time]")
+        if signal.shape[-1] < self.patch_size:
+            raise ValueError("signal time dimension must be at least one patch")
+        remainder = signal.shape[-1] % self.patch_size
+        if remainder:
+            signal = F.pad(signal, (0, self.patch_size - remainder))
         tokens = self.projection(signal).transpose(1, 2)
         cls = self.cls.expand(signal.shape[0], -1, -1)
         return self.norm(self.transformer(torch.cat([cls, tokens], dim=1))[:, 0])
