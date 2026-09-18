@@ -51,6 +51,31 @@ def load_npz_expression(path: str | Path) -> SparseExpression:
     )
 
 
+def _load_review(path: str | Path) -> dict[str, object]:
+    """Load an explicitly approved review record for a real-data lock.
+
+    A review record must contain an explicit boolean approval, reviewer identity,
+    and review timestamp. This helper is deliberately independent from the data
+    lock itself so tests and callers cannot silently treat a missing review as
+    approval.
+    """
+    review_path = Path(path)
+    if not review_path.exists():
+        raise FileNotFoundError(f"review record not found: {review_path}")
+    payload = json.loads(review_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("review record must be a JSON object")
+    if payload.get("approved") is not True:
+        raise ValueError("review record requires approved=true")
+    reviewer = payload.get("reviewer")
+    if not isinstance(reviewer, str) or not reviewer.strip():
+        raise ValueError("review record requires reviewer")
+    timestamp = payload.get("reviewed_at", payload.get("timestamp"))
+    if not isinstance(timestamp, str) or not timestamp.strip():
+        raise ValueError("review record requires review timestamp")
+    return payload
+
+
 def _validate_split(split: dict[str, object], families: set[str]) -> None:
     if split.get("unit") != "study_family_id":
         raise ValueError("locked split must use study_family_id as its unit")
