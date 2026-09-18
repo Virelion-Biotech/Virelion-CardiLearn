@@ -328,7 +328,7 @@ class FactorizedNBDecoder(nn.Module):
             max=20.0,
         )
         mu = torch.exp(log_mu)
-        theta = F.softplus(self.log_theta).unsqueeze(0) + 1e-4
+        theta = (F.softplus(self.log_theta).unsqueeze(0) + 1e-4).expand_as(mu)
         return mu, theta
 
 
