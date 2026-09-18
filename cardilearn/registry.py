@@ -50,8 +50,7 @@ class ModelRegistry:
             if stable_manifest_payload(existing) != stable_manifest_payload(payload):
                 raise FileExistsError(f"immutable run manifest already exists: {path}")
             return path
-        path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "
-", encoding="utf-8")
+        path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         return path
 
     def register_artifact(self, run_id: str, path: str | Path, *, name: str | None = None) -> dict[str, Any]:
