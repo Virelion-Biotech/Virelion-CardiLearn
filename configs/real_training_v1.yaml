@@ -1,96 +1,72 @@
-schema_version: "1.1"
+schema_version: "1.3"
 
 experiment:
-  name: cardilearn_real_training_v2
+  name: cardilearn_research_v1
   task: cardiac_state_representation_learning
-  model: cardilearn_large
-  model_scale: transcriptome_scale
+  model: cardilearn_research
+  status: unvalidated_research_configuration
   biological_scope: development_maturation_injury_regeneration
 
-input:
-  expression: /path/to/training_ready_expression.npz
-  metadata: /path/to/training_ready_metadata.parquet
-  matrix_orientation: observations_by_genes
-  n_genes: 20000
-  expected_input: raw_or_near_raw_nonnegative_counts
+data:
+  matrix_format: anndata_or_sparse
+  observation_hierarchy: study_family_id > study_id > subject_id > sample_id > cell_or_nucleus_id
+  raw_expression_required: true
+  unresolved_metadata: reject
 
-splits:
-  group_column: study_id
-  policy: study_grouped
-  selection_split: validation
-  report_split: test
-  locked_test: true
-  biological_independence: study_family_then_subject_then_sample
+representation:
+  value_style: continuous
+  gene_dim: 256
+  n_programs: 128
+  n_layers: 6
+  n_heads: 8
+  backbone: transformer
+  optional_backbone: mamba
+  shared_dim: 384
+  private_dim: 128
+  decoder_dim: 256
+  router_chunk_size: 2048
+  grn_prior: optional_explicit_gene_program_matrix
+  grn_prior_strength: 0.0
 
-preprocessing:
-  feature_selection: train_only
-  normalization: train_only
-  imputation: prohibited_for_primary_training
-  encoder_transform: log1p_counts
-  decoder_likelihood: negative_binomial
-  library_size: observed_per_cell
-  unknown_metadata: reject
-  species_orthology: explicit_one_to_one_review_required
-  modality_mixing: prohibited_without_explicit_multimodal_model
-
-training:
-  seeds: [13, 42, 73, 101, 131]
-  primary_seed: 42
-  epochs: 10
-  batch_size: 8
-  gradient_accumulation: enabled_when_needed
-  mixed_precision: recommended
-  gradient_clipping: 5.0
-  mask_fraction: 0.15
-  device: auto
+decoder:
+  likelihood: negative_binomial
+  factorized_gene_output: true
+  library_size_conditioning: true
 
 objectives:
-  count_reconstruction: negative_binomial_nll
-  masked_gene_prediction: true
-  view_invariance: true
-  anti_collapse: variance_and_covariance
-  cell_type_auxiliary: true
-  maturation_auxiliary: true
-  injury_auxiliary: true
-  species_adversarial: true
-  species_adversarial_weight: 0.10
+  schedule:
+    - name: representation
+      epochs: 1
+      reconstruction: 1.0
+      masked: 1.0
+      contrastive: 0.0
+      vicreg: 0.10
+      cell_type: 0.0
+      maturation: 0.0
+      injury: 0.0
+      species_adversarial: 0.0
+    - name: biological_state
+      epochs: remaining
+      reconstruction: 1.0
+      masked: 1.0
+      contrastive: 0.25
+      vicreg: 0.10
+      cell_type: 0.50
+      maturation: 1.0
+      injury: 0.50
+      species_adversarial: 0.0
 
-required_metadata:
-  - study_id
-  - subject_id
-  - sample_id
-  - species
-  - assay
-  - cell_type
-  - maturation
-  - injury
-
-architecture:
-  gene_dim: 1024
-  n_programs: 64
-  n_layers: 8
-  n_heads: 16
-  ff_mult: 4
-  shared_dim: 768
-  private_dim: 256
-  dropout: 0.10
-  gene_identity_embeddings: true
-  program_query_cross_attention: true
-  dense_gene_self_attention: false
-  transcriptome_scale_decoder: true
-  count_aware_decoder: true
-  masked_gene_head: true
-  species_adversarial_head: true
-
-# This configuration describes a high-capacity research model. It is not
-# evidence of biological validity. Biological conclusions require locked
-# external tests and experimental or orthogonal validation.
-guardrails:
-  train_only_fit: true
+validation:
   no_random_cell_split: true
+  biological_split_unit: study_family_id
+  external_study_required: true
+  cross_species_required_when_claimed: true
+  final_test_locked: true
+  multiple_seeds: [13, 42, 73, 101, 131]
+
+guardrails:
+  train_only_feature_selection: true
+  train_only_preprocessing: true
   no_unresolved_labels: true
-  no_imputation_primary: true
-  raw_expression_not_committed: true
-  orthology_required_before_cross_species_training: true
-  empirical_claims_require_locked_test: true
-  biological_claims_require_external_validation: true
+  no_synthetic_pairs_as_real_pairs: true
+  causal_claims_require_experiment: true
