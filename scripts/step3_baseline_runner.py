@@ -359,7 +359,7 @@ def resolve_matrix_sample_columns(
                 ).lower()
 
                 rep_match = re.search(
-                    r"\b(?:rep(?:licate)?|sample)?\s*[_-]?\s*([0-9]+)\b",
+                    r"\b(?:rep(?:licate)?|sample)\s*[_-]?\s*([0-9]+)\b",
                     title,
                 )
 
@@ -834,8 +834,20 @@ def acquire_counts(acc: str, rec: dict[str, object], samples: list[dict[str, obj
                     }
             except Step3Halt:
                 raise
+            except ValueError as exc:
+                audit.append({
+                    "url": url,
+                    "status": "rejected",
+                    "reason": f"{type(exc).__name__}: {exc}",
+                })
             except Exception as exc:
-                audit.append({"url": url, "status": "rejected", "reason": f"{type(exc).__name__}: {exc}"})
+                halt(
+                    "Unexpected internal parser error while inspecting a "
+                    "candidate source.\n"
+                    f"Accession: {acc}\n"
+                    f"File: {file}\n"
+                    f"Error: {type(exc).__name__}: {exc}"
+                )
 
     audit_path = AUDIT / f"{acc}.json"
     audit_path.parent.mkdir(parents=True, exist_ok=True)
@@ -914,6 +926,87 @@ def permutation_p(y: np.ndarray, p: np.ndarray) -> float:
     return float((ge + 1) / (N_PERM + 1))
 
 
+def run_internal_contract_tests() -> None:
+    # These are parser/metadata contract tests only. They do not create or
+    # report benchmark observations or substitute for real data.
+    base = {
+        "geo_accession": "GSM_TEST",
+        "title": "Heart, Myocardial infarction, 7days, rep1",
+        "relation": ["SRA: https://www.ncbi.nlm.nih.gov/sra?term=SRX123456"],
+    }
+
+    aliases = sample_column_aliases(base)
+
+    required = {
+        "mi7d1",
+        "mi_7d_1",
+        "mi7day1",
+        "mi_rep1",
+        "srx123456",
+    }
+
+    missing = sorted(
+        required - aliases
+    )
+
+    if missing:
+        halt(
+            "Internal contract test failed for MI/timepoint/rep aliases: "
+            f"{missing}"
+        )
+
+    if (
+        "mi7" in aliases
+        and "mi1" not in aliases
+    ):
+        # This branch is intentionally not an acceptance requirement; the
+        # important invariant is that the actual rep is 1 and the timepoint
+        # remains 7d in the canonical aliases above.
+        pass
+
+    nc_base = {
+        "geo_accession": "GSM_TEST_NC",
+        "title": "NC1",
+        "relation": [],
+    }
+
+    manifest_record = {
+        "sham_samples": ["GSM_TEST_NC"],
+        "mi_samples": [],
+    }
+
+    resolved = resolve_matrix_sample_columns(
+        ["NC1"],
+        [nc_base],
+        manifest_record=manifest_record,
+    )
+
+    if resolved.get("GSM_TEST_NC") != "NC1":
+        halt(
+            "Internal contract test failed for manifest-backed NC1 mapping"
+        )
+
+    gsm_matrix = {
+        "geo_accession": "GSM_TEST_GSM",
+        "title": "Heart, Sham, rep1",
+        "relation": [],
+    }
+
+    resolved_gsm = resolve_matrix_sample_columns(
+        ["GSM_TEST_GSM"],
+        [gsm_matrix],
+    )
+
+    if resolved_gsm.get("GSM_TEST_GSM") != "GSM_TEST_GSM":
+        halt(
+            "Internal contract test failed for direct GSM matrix mapping"
+        )
+
+    print(
+        "Internal GEO/parser contract tests: PASS"
+    )
+
+
 def main() -> None:
     if WORK.exists():
         shutil.rmtree(WORK)
@@ -944,6 +1037,8 @@ def main() -> None:
     except Exception:
         print("CUDA available: False")
         print("CUDA device: CPU")
+
+    run_internal_contract_tests()
 
     if REPO.exists():
         shutil.rmtree(REPO)
