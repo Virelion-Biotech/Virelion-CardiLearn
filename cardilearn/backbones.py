@@ -13,6 +13,16 @@ class EncoderAdapter(Protocol):
         """Return one representation per biological observation."""
 
 
+def validate_embedding_output(values: Any, *, n_observations: int | None = None) -> Any:
+    """Validate an adapter output without importing NumPy into optional backends."""
+    shape = getattr(values, "shape", None)
+    if shape is None or len(shape) != 2:
+        raise ValueError("encoder output must be a two-dimensional array-like object")
+    if n_observations is not None and int(shape[0]) != n_observations:
+        raise ValueError("encoder output row count does not match observations")
+    return values
+
+
 @dataclass(frozen=True)
 class CallableEncoderAdapter:
     """Adapter for any callable encoder with an explicit provenance label."""
@@ -22,7 +32,8 @@ class CallableEncoderAdapter:
     provenance: dict[str, str]
 
     def encode(self, data: Any) -> Any:
-        return self.encoder(data)
+        values = self.encoder(data)
+        return validate_embedding_output(values)
 
 
 @dataclass(frozen=True)
@@ -72,6 +83,20 @@ EXTERNAL_ENCODERS = (
         source_repo="https://github.com/snap-stanford/UCE",
         method="encode",
         notes="External zero-shot cell representation; caller supplies the repository-specific model wrapper.",
+    ),
+    ExternalEncoderSpec(
+        name="nicheformer",
+        package="nicheformer",
+        source_repo="https://github.com/theislab/nicheformer",
+        method="encode",
+        notes="Optional single-cell/spatial encoder; callers provide the repository-specific wrapper.",
+    ),
+    ExternalEncoderSpec(
+        name="scimilarity",
+        package="scimilarity",
+        source_repo="https://github.com/Genentech/scimilarity",
+        method="search",
+        notes="Retrieval-oriented representation; use its repository API through a caller-provided adapter.",
     ),
     ExternalEncoderSpec(
         name="scvi",
