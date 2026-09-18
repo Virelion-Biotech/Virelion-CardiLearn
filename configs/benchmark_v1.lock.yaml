@@ -1,0 +1,222 @@
+schema_version: "1.0"
+artifact: "configs/benchmark_v1.lock.yaml"
+status: "locked"
+scope: "Stage-1 cardiac transcriptomic injury representation benchmark"
+
+# This file freezes the benchmark definition only.
+# It must not contain model-specific tuning decisions and must remain unchanged
+# after human approval. The held-out test family is never used for model selection.
+
+data:
+  manifest: "data/manifest.lock.json"
+  strict_track: "strict_biological_replicate_benchmark"
+  allowed_species:
+    - "Mus musculus"
+  allowed_assays:
+    - "bulk_RNA_seq"
+    - "long_RNA_seq"
+  biological_unit: "individual biological replicate / individual sample as explicitly defined by source"
+  unit_weighting: "equal biological-unit weighting"
+  pooled_library_policy: "exclude pooled-heart/pool-as-library observations from strict benchmark"
+  raw_expression_requirement:
+    scale: "raw integer-like counts"
+    transformed_values_allowed: false
+    negative_binomial_inputs_only: true
+  unresolved_metadata_policy: "exclude"
+  duplicate_biological_unit_policy: "exclude"
+  technical_replicate_policy: "collapse_within_biological_unit_before_inference"
+
+cohort_inclusion:
+  accessions:
+    - "GSE183272"
+    - "GSE232259"
+    - "GSE236374"
+    - "GSE52313"
+    - "GSE186875"
+    - "GSE308783"
+  study_family_unit: true
+  minimum_independent_study_families: 6
+  rationale: "Each listed accession is an independent study family in the Step-1 lock; no accession count substitutes for biological independence."
+
+primary_task:
+  name: "held_out_MI_vs_sham"
+  target_column: "injury"
+  positive_label: "MI"
+  negative_label: "sham"
+  inference_unit: "biological_unit"
+  primary_metric: "auroc"
+  secondary_metrics:
+    - "auprc"
+    - "balanced_accuracy"
+    - "f1_macro"
+    - "brier_score"
+  calibration:
+    required: true
+    method: "reported_probabilities; calibration assessed without refitting on test"
+  interpretation_boundary: "predictive association only; not causal mechanism, regenerative efficacy, or clinical utility"
+
+secondary_tasks:
+  timepoint_stratified:
+    enabled: true
+    rule: "report performance by explicitly available post-injury timepoint where each held-out family permits a valid two-class comparison"
+    no_pooling_across_timepoints_for_primary_score: true
+  cross_species:
+    enabled: false
+    reason: "All strict benchmark families in this lock are Mus musculus; species-unseen transfer requires a separately locked heterogeneous-species benchmark."
+  regeneration_label:
+    enabled: false
+    reason: "The strict cohorts primarily establish injury status, not a uniformly defined regeneration phenotype."
+
+frozen_split:
+  unit: "study_family_id"
+  assignment:
+    train:
+      - "GSE183272"
+      - "GSE232259"
+      - "GSE52313"
+      - "GSE186875"
+    validation:
+      - "GSE236374"
+    test:
+      - "GSE308783"
+  rationale:
+    train: "Four independent families provide development data across multiple post-MI sampling designs."
+    validation: "A completely held-out family provides model-selection data without exposing the final test family."
+    test: "GSE308783 is untouched until the final benchmark report."
+  split_generation:
+    randomized: false
+    seed: 42
+    note: "Seed is retained for deterministic secondary resampling only; partition membership is explicit and must not be regenerated from the seed."
+
+feature_construction:
+  gene_identifier_space: "Mus musculus"
+  mapping:
+    method: "explicit one-to-one mapping to stable mouse gene identifiers"
+    many_to_one: false
+    one_to_many: false
+    duplicate_target_ids: "exclude"
+  common_gene_universe:
+    construction: "intersection of eligible training-family gene identifiers after mapping"
+    test_only_genes_allowed: false
+    validation_only_genes_allowed: false
+  variable_gene_selection:
+    enabled: true
+    n_genes: 5000
+    selection_scope: "train families only"
+    variance_estimator: "sparse_population_variance_on_raw_counts"
+    refit_on_validation: false
+    refit_on_test: false
+  normalization:
+    model_input: "raw counts"
+    downstream_baseline_transform: "defined per baseline and fit only on training data where parameters are learned"
+    test_statistics_never_used_for_normalization_fit: true
+
+sample_aggregation:
+  single_cell_or_single_nucleus_inputs:
+    primary_aggregation: "pseudobulk by biological_unit_id x cell_type when used in auxiliary cellular analyses"
+    cell_level_primary_inference: false
+  bulk_inputs:
+    aggregation: "none"
+  primary_benchmark_unit: "one biological unit contributes one benchmark observation per explicitly defined condition/timepoint sample"
+
+model_selection:
+  validation_only: true
+  test_only: false
+  allowed_selection_inputs:
+    - "training loss"
+    - "training diagnostics"
+    - "validation metrics"
+    - "validation uncertainty"
+  prohibited_selection_inputs:
+    - "test labels"
+    - "test metrics"
+    - "test confidence intervals"
+    - "test error inspection followed by hyperparameter changes"
+  repeated_test_evaluation: false
+
+baselines:
+  required:
+    - "pca_linear_probe"
+    - "plain_mlp"
+    - "plain_autoencoder"
+  fairness:
+    same_train_validation_test_split: true
+    same_gene_universe: true
+    same_biological_unit_weights: true
+    same_primary_endpoint: true
+    train_only_feature_selection: true
+  model_selection: "validation only"
+
+uncertainty:
+  biological_resampling_unit: "biological_unit"
+  bootstrap:
+    enabled: true
+    resamples: 2000
+    confidence_level: 0.95
+    stratify_by_class_within_resample: true
+  permutation:
+    enabled: true
+    resamples: 1000
+    unit: "biological_unit"
+    shuffling_scope: "within held-out evaluation units only after predictions are frozen"
+    purpose: "null assessment of association for the primary endpoint"
+  no_cell_level_bootstrap_for_primary_claims: true
+
+qc_gates:
+  before_model_fitting:
+    - "source accession and publication linkage verified"
+    - "raw count scale verified"
+    - "biological unit verified"
+    - "sample-to-biological-unit mapping one-to-one"
+    - "condition labels explicit"
+    - "study family assignment explicit"
+    - "no study/subject/sample/family leakage"
+    - "gene identifiers reconciled"
+    - "finite nonnegative expression"
+    - "duplicate observation identifiers absent"
+  sensitivity:
+    - "library size"
+    - "detected genes/features"
+    - "mitochondrial fraction when source supports calculation"
+    - "outlier biological-unit sensitivity"
+    - "timepoint-stratified performance"
+
+reporting:
+  primary_result:
+    unit: "independent biological unit"
+    aggregate_over_families: "report pooled held-out predictions plus per-family metrics; do not average cells"
+  minimum_report:
+    - "n biological units by split"
+    - "n biological units by condition"
+    - "n biological units by study family"
+    - "AUROC with 95% CI"
+    - "AUPRC"
+    - "balanced accuracy"
+    - "F1 macro"
+    - "Brier score"
+    - "permutation p-value"
+    - "per-family performance"
+    - "QC exclusions"
+    - "gene count after reconciliation"
+    - "exact repository commit"
+    - "exact data fingerprint"
+    - "environment/package versions"
+  low_sample_warning:
+    enabled: true
+    threshold_below_10_test_units: "report uncertainty prominently and prohibit strong generalization language"
+  claims:
+    permitted: "held-out predictive performance under this locked benchmark"
+    prohibited:
+      - "causal mechanism"
+      - "regenerative efficacy"
+      - "clinical utility"
+      - "disease diagnosis"
+      - "species-unseen transfer"
+
+reproducibility:
+  seed: 42
+  deterministic_algorithms: "enabled where supported"
+  split_frozen: true
+  test_evaluated_once: true
+  data_fingerprint_required: true
+  configuration_fingerprint_required: true
