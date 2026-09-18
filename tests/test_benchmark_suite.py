@@ -59,3 +59,14 @@ def test_embedding_benchmark_can_aggregate_cell_embeddings_to_biological_groups(
     assert zg.shape == (2, 2)
     assert yg.tolist() == [0, 1]
     assert gg.tolist() == ["s1", "s2"]
+
+
+def test_bootstrap_metric_can_resample_biological_groups():
+    import numpy as np
+    from cardilearn.representation_benchmark import bootstrap_metric
+    y = np.array([0, 0, 1, 1, 0, 1])
+    score = np.array([0.1, 0.2, 0.8, 0.9, 0.3, 0.7])
+    groups = np.array(["s1","s1","s2","s2","s3","s3"])
+    result = bootstrap_metric(y, score, groups=groups, n_bootstrap=50, seed=1)
+    assert result["n_valid"] > 0
+    assert result["ci95_low"] <= result["ci95_high"]
