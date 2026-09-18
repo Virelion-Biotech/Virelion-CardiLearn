@@ -317,7 +317,8 @@ def bootstrap_metric(
     metric: str = "auroc",
     n_bootstrap: int = 2000,
     seed: int = 42,
-) -> dict[str, float | int | list[float]]:
+    groups: Iterable | None = None,
+) -> dict[str, float | int]:
     y = np.asarray(list(y_true))
     score = np.asarray(list(y_score), dtype=float)
     if y.size == 0:
@@ -326,18 +327,33 @@ def bootstrap_metric(
         raise ValueError("y_score contains non-finite values")
     if y.shape != score.shape:
         raise ValueError("y_true and y_score must have matching shapes")
+    group_values = None if groups is None else np.asarray(list(groups), dtype=object)
+    if group_values is not None:
+        if group_values.shape != y.shape:
+            raise ValueError("groups must have one value per observation")
+        unique_groups = pd.unique(group_values)
+        group_indices = [np.flatnonzero(group_values == group) for group in unique_groups]
+        for indices in group_indices:
+            if np.unique(y[indices]).size != 1:
+                raise ValueError("each biological bootstrap group must have exactly one target label")
     if n_bootstrap < 1:
         raise ValueError("n_bootstrap must be positive")
     rng = np.random.default_rng(seed)
     values: list[float] = []
     for _ in range(n_bootstrap):
-        indices = rng.integers(0, len(y), len(y))
+        if group_values is None:
+            indices = rng.integers(0, len(y), len(y))
+        else:
+            sampled_groups = rng.integers(0, len(group_indices), len(group_indices))
+            indices = np.concatenate([group_indices[index] for index in sampled_groups])
         sample_y = y[indices]
         if metric == "auroc":
             if len(np.unique(sample_y)) < 2:
                 continue
             values.append(float(roc_auc_score(sample_y, score[indices])))
         elif metric == "auprc":
+            if len(np.unique(sample_y)) < 2:
+                continue
             values.append(float(average_precision_score(sample_y, score[indices])))
         else:
             raise ValueError("metric must be 'auroc' or 'auprc'")
