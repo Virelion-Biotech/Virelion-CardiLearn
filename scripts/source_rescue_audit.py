@@ -242,29 +242,45 @@ def study_file_candidates(study_json: dict[str, Any]) -> list[str]:
     return sorted(set(found))
 
 
+def _search_hits(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, dict):
+        for key in ("hits", "results", "studies", "experiments", "data"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                return [x for x in value if isinstance(x, dict)]
+    elif isinstance(payload, list):
+        return [x for x in payload if isinstance(x, dict)]
+    return []
+
+
 def expression_atlas_evidence(gse: str, sample_ids: list[str]) -> SourceEvidence:
-    try:
-        search = atlas_search(gse)
-    except Exception as exc:
-        return SourceEvidence(
-            source_type="expression_atlas_raw_counts",
-            status="not_found",
-            accession=gse,
-            sample_ids=sample_ids,
-            notes=[f"ArrayExpress/BioStudies search unavailable: {type(exc).__name__}: {exc}"],
-        )
+    experiment_hits: list[str] = []
+    search_errors: list[str] = []
+    search_urls: list[str] = []
 
-    hits = search.get("hits", [])
-    if not isinstance(hits, list):
-        hits = []
-
-    experiment_hits = []
-    for hit in hits:
-        if not isinstance(hit, dict):
-            continue
-        accession = str(hit.get("accession", "") or hit.get("id", "")).strip()
-        if accession:
-            experiment_hits.append(accession)
+    search_urls_to_try = [
+        f"{BIOSTUDIES_SEARCH}?{urlencode({'query': gse, 'pageSize': 100, 'page': 1})}",
+        f"https://www.ebi.ac.uk/biostudies/api/v1/search?{urlencode({'query': gse, 'pageSize': 100, 'page': 1})}",
+    ]
+    for search_url in search_urls_to_try:
+        try:
+            payload = http_json(search_url)
+            hits = _search_hits(payload)
+            for hit in hits:
+                accession = str(
+                    hit.get("accession")
+                    or hit.get("id")
+                    or hit.get("acc")
+                    or hit.get("accessionCode")
+                    or ""
+                ).strip()
+                if accession:
+                    experiment_hits.append(accession)
+            search_urls.append(search_url)
+            if experiment_hits:
+                break
+        except Exception as exc:
+            search_errors.append(f"{type(exc).__name__}: {exc}")
 
     candidate_files: set[str] = set()
     atlas_pages: list[str] = []
@@ -286,28 +302,28 @@ def expression_atlas_evidence(gse: str, sample_ids: list[str]) -> SourceEvidence
         except Exception:
             pass
 
-    if candidate_files and atlas_pages:
+    # Expression Atlas is derived from BioStudies/ArrayExpress; its current download
+    # contract states that RNA-seq experiments expose an "raw counts" download generated
+    # by htseq-count. Finding the experiment page is evidence, but exact GSM coverage and
+    # the downloaded count file still require validation.
+    if atlas_pages or candidate_files:
         status = "candidate"
         notes = [
-            "Expression Atlas page and raw/count-like ArrayExpress/BioStudies file evidence found.",
-            "Exact GSM coverage still requires sample-level file reconciliation before approval.",
-        ]
-    elif atlas_pages:
-        status = "candidate_metadata_only"
-        notes = [
-            "Expression Atlas experiment page found, but no raw/count-like file path was recovered from BioStudies metadata.",
-            "Use the Atlas download contract to inspect its RNA-seq raw-count artifact.",
+            "EBI experiment/BioStudies evidence found.",
+            "Expression Atlas RNA-seq raw-count files are documented as htseq-count outputs; "
+            "exact sample coverage and file content must still be validated before strict approval.",
         ]
     else:
         status = "not_found"
-        notes = ["No Expression Atlas experiment with direct evidence was resolved from the GSE query."]
+        notes = ["No EBI ArrayExpress/BioStudies/Atlas experiment was resolved from the GSE query."]
+    notes.extend(search_errors)
 
     return SourceEvidence(
         source_type="expression_atlas_raw_counts",
         status=status,
         accession=gse,
         sample_ids=sample_ids,
-        source_urls=atlas_pages,
+        source_urls=search_urls + atlas_pages,
         candidate_files=sorted(candidate_files),
         exact_sample_coverage=0,
         exact_sample_expected=len(sample_ids),
@@ -324,72 +340,85 @@ def archs4_evidence(
     sample_ids: list[str],
     h5_path: str | None,
 ) -> SourceEvidence:
-    if not h5_path:
+    if h5_path:
+        path = Path(h5_path)
+        if not path.is_file():
+            return SourceEvidence(
+                source_type="archs4_kallisto_rounded",
+                status="error",
+                accession=gse,
+                sample_ids=sample_ids,
+                notes=[f"ARCHS4 H5 not found: {path}"],
+            )
+        try:
+            import h5py
+        except ImportError:
+            return SourceEvidence(
+                source_type="archs4_kallisto_rounded",
+                status="not_checked_dependency_missing",
+                accession=gse,
+                sample_ids=sample_ids,
+                notes=["Install h5py to inspect the supplied ARCHS4 H5 file."],
+            )
+        try:
+            with h5py.File(path, "r") as h5:
+                values = h5["meta/samples/geo_accession"][()]
+                available = {
+                    (x.decode() if isinstance(x, bytes) else str(x)).upper()
+                    for x in values
+                }
+        except Exception as exc:
+            return SourceEvidence(
+                source_type="archs4_kallisto_rounded",
+                status="error",
+                accession=gse,
+                sample_ids=sample_ids,
+                notes=[f"Could not read ARCHS4 H5 metadata: {type(exc).__name__}: {exc}"],
+            )
+        matched = sorted(set(sample_ids) & available)
+        status = "available" if len(matched) == len(set(sample_ids)) else ("partial" if matched else "not_found")
         return SourceEvidence(
             source_type="archs4_kallisto_rounded",
-            status="not_checked",
+            status=status,
             accession=gse,
             sample_ids=sample_ids,
+            exact_sample_coverage=len(matched),
+            exact_sample_expected=len(sample_ids),
             notes=[
-                "No local ARCHS4 H5 supplied. Current mouse gene H5 is tens of GB; do not auto-download in the audit.",
-                "When supplied, only metadata/sample availability is checked here.",
+                "ARCHS4 gene-level values are Kallisto-derived/rounded and are never promoted to strict raw-count status."
             ],
+            provenance={"h5_sha256": sha256_file(path), "h5_path": str(path), "matched_gsms": matched},
         )
 
-    path = Path(h5_path)
-    if not path.is_file():
-        return SourceEvidence(
-            source_type="archs4_kallisto_rounded",
-            status="error",
-            accession=gse,
-            sample_ids=sample_ids,
-            notes=[f"ARCHS4 H5 not found: {path}"],
-        )
-
+    url = f"https://maayanlab.cloud/archs4/series/{gse}"
     try:
-        import h5py
-    except ImportError:
-        return SourceEvidence(
-            source_type="archs4_kallisto_rounded",
-            status="not_checked_dependency_missing",
-            accession=gse,
-            sample_ids=sample_ids,
-            notes=["Install h5py to inspect a supplied ARCHS4 H5 file."],
-        )
-
-    try:
-        with h5py.File(path, "r") as h5:
-            values = h5["meta/samples/geo_accession"][()]
-            available = {
-                x.decode() if isinstance(x, bytes) else str(x)
-                for x in values
-            }
+        html = http_text(url, timeout=45)
     except Exception as exc:
         return SourceEvidence(
             source_type="archs4_kallisto_rounded",
-            status="error",
+            status="not_found",
             accession=gse,
             sample_ids=sample_ids,
-            notes=[f"Could not read ARCHS4 H5 metadata: {type(exc).__name__}: {exc}"],
+            source_urls=[url],
+            notes=[f"ARCHS4 series page unavailable: {type(exc).__name__}: {exc}"],
         )
 
+    available = {x.upper() for x in GSM_RE.findall(html)}
     matched = sorted(set(sample_ids) & available)
+    status = "available" if len(matched) == len(set(sample_ids)) else ("partial" if matched else "not_found")
     return SourceEvidence(
         source_type="archs4_kallisto_rounded",
-        status="available" if matched else "not_found",
+        status=status,
         accession=gse,
         sample_ids=sample_ids,
+        source_urls=[url],
         exact_sample_coverage=len(matched),
         exact_sample_expected=len(sample_ids),
         notes=[
-            "ARCHS4 gene-level H5 values are Kallisto-derived pseudocounts rounded to integers; "
-            "they are not promoted to strict raw-count status."
+            "ARCHS4 series-page lookup performed without downloading the large H5 database.",
+            "ARCHS4 gene-level values are Kallisto-derived/rounded and are never promoted to strict raw-count status.",
         ],
-        provenance={
-            "h5_sha256": sha256_file(path),
-            "h5_path": str(path),
-            "matched_gsms": matched,
-        },
+        provenance={"series_url": url, "matched_gsms": matched},
     )
 
 
@@ -398,57 +427,68 @@ def recount3_project_candidates(sra_links: Iterable[str]) -> list[str]:
     return sorted(set(PROJECT_RE.findall(text)))
 
 
+def recount3_project_candidates(accessions: Iterable[str]) -> list[str]:
+    projects = set()
+    for accession in accessions:
+        value = str(accession).strip().upper()
+        if PROJECT_RE.fullmatch(value):
+            projects.add(value)
+        elif value.startswith("PRJNA"):
+            projects.add(value)
+    return sorted(projects)
+
+
 def recount3_evidence(
     gse: str,
     sample_ids: list[str],
     sra_links: list[str],
+    ena_records: list[dict[str, str]] | None = None,
 ) -> SourceEvidence:
-    projects = recount3_project_candidates(sra_links)
-    if not projects:
+    srx_ids = sorted({
+        accession
+        for relation in sra_links
+        for accession in extract_accessions(relation, SRX_RE)
+    })
+    records = ena_records or []
+    run_ids = sorted({
+        str(record.get("run_accession", "")).strip().upper()
+        for record in records
+        if record.get("run_accession")
+    })
+    run_sizes = {
+        str(record["run_accession"]).strip().upper(): {
+            "read_count": record.get("read_count"),
+            "base_count": record.get("base_count"),
+            "fastq_bytes": record.get("fastq_bytes"),
+            "fastq_ftp": record.get("fastq_ftp"),
+            "srx": record.get("experiment_accession", ""),
+            "study_accession": record.get("study_accession", ""),
+        }
+        for record in records
+        if record.get("run_accession")
+    }
+    projects = recount3_project_candidates(
+        [record.get("study_accession", "") for record in records]
+        + [x for x in re.findall(r"\b(?:SRP|ERP|DRP|PRJNA)\d+\b", " ".join(sra_links), re.I)]
+    )
+    if not run_ids:
         return SourceEvidence(
             source_type="recount3_derived_read_counts",
             status="not_found",
             accession=gse,
             sample_ids=sample_ids,
-            notes=["No SRP/ERP/DRP project identifier was present in the GEO relation fields."],
+            exact_sample_expected=0,
+            notes=["No SRR run accessions were resolved from ENA for the locked SRX records."],
+            provenance={"projects": projects, "ena_run_sizes": run_sizes},
         )
-
-    # First recover SRX -> SRR through ENA. This keeps the exact run mapping tied to the GEO GSM.
-    srx_ids: set[str] = set()
-    for relation in sra_links:
-        srx_ids.update(extract_accessions(relation, SRX_RE))
-
-    run_ids: set[str] = set()
-    run_sizes: dict[str, Any] = {}
-    for srx in sorted(srx_ids):
-        try:
-            payload = ena_run_report(srx)
-        except Exception:
-            continue
-        reports = payload.get("records", [])
-        if not isinstance(reports, list):
-            continue
-        for record in reports:
-            if not isinstance(record, dict):
-                continue
-            run = str(record.get("run_accession", "")).strip().upper()
-            if not run:
-                continue
-            run_ids.add(run)
-            run_sizes[run] = {
-                "read_count": record.get("read_count"),
-                "base_count": record.get("base_count"),
-                "fastq_bytes": record.get("fastq_bytes"),
-                "fastq_ftp": record.get("fastq_ftp"),
-                "srx": srx,
-            }
 
     checked_urls: list[str] = []
     matched_runs: set[str] = set()
-
     for project in projects:
-        suffix = project[-2:]
         for mirror in RECOUNT3_MIRRORS:
+            suffix = project[-2:] if project.startswith(("SRP", "ERP", "DRP")) else None
+            if suffix is None:
+                continue
             url = (
                 f"{mirror}/mouse/data_sources/sra/metadata/{suffix}/{project}/"
                 f"sra.sra.{project}.MD.gz"
@@ -465,25 +505,17 @@ def recount3_evidence(
                 with urlopen(req, timeout=60) as response:
                     blob = response.read()
                 raw = gzip.decompress(blob).decode("utf-8", errors="replace")
-                for run in run_ids:
-                    if run in raw:
-                        matched_runs.add(run)
+                matched_runs.update(run for run in run_ids if run in raw)
             except Exception:
                 continue
 
-    if matched_runs:
-        status = "candidate"
-        notes = [
-            "recount3 contains the resolved SRA runs at the project-metadata level.",
-            "recount3 gene raw_counts are base-pair coverage counts; converting them to read-count estimates "
-            "is derived and must not be labeled original submitter raw counts.",
-        ]
-    else:
-        status = "project_found_but_sample_match_unconfirmed" if projects else "not_found"
-        notes = [
-            "recount3 project metadata was not sufficient to confirm exact run coverage from this audit."
-        ]
-
+    status = "candidate" if len(matched_runs) == len(run_ids) else (
+        "partial" if matched_runs else "project_found_but_sample_match_unconfirmed"
+    )
+    notes = [
+        "recount3 is derived from uniformly processed SRA data.",
+        "recount3 gene raw_counts are base-pair coverage counts; any read-count conversion is derived and must not be labeled original submitter raw counts.",
+    ]
     return SourceEvidence(
         source_type="recount3_derived_read_counts",
         status=status,
@@ -494,10 +526,7 @@ def recount3_evidence(
         exact_sample_expected=len(run_ids),
         run_ids=sorted(run_ids),
         notes=notes,
-        provenance={
-            "projects": projects,
-            "ena_run_sizes": run_sizes,
-        },
+        provenance={"projects": projects, "ena_run_sizes": run_sizes, "matched_runs": sorted(matched_runs)},
     )
 
 
@@ -580,38 +609,39 @@ def run_audit(manifest_path: Path, output_path: Path, archs4_h5: str | None = No
                 "sources": [],
                 "recommendation": {
                     "recommended_action": "manual_reconcile_geo",
-                    "reason": "Could not retrieve/parse the authoritative GEO sample metadata."
+                    "reason": "Could not retrieve/parse the authoritative GEO sample metadata.",
                 },
             }
             continue
 
         sra_links = sorted({link for record in selected for link in extract_sra_links(record)})
-        srx_ids = sorted(set().union(*(set(extract_accessions(link, SRX_RE)) for link in sra_links)))
+        srx_ids = sorted({
+            accession_id
+            for link in sra_links
+            for accession_id in extract_accessions(link, SRX_RE)
+        })
+
+        run_evidence: list[dict[str, str]] = []
+        for srx in srx_ids:
+            try:
+                run_evidence.extend(ena_run_report(srx))
+            except Exception as exc:
+                run_evidence.append({
+                    "experiment_accession": srx,
+                    "error": f"{type(exc).__name__}: {exc}",
+                })
 
         sources = [
             strict_candidate_from_geo(accession, selected),
             expression_atlas_evidence(accession, sample_ids),
             archs4_evidence(accession, sample_ids, archs4_h5),
-            recount3_evidence(accession, sample_ids, sra_links),
+            recount3_evidence(accession, sample_ids, sra_links, run_evidence),
         ]
-
-        run_evidence: list[dict[str, Any]] = []
-        run_ids: set[str] = set()
-        for srx in srx_ids:
-            try:
-                payload = ena_run_report(srx)
-                records_ena = payload.get("records", [])
-                if isinstance(records_ena, list):
-                    for record in records_ena:
-                        if isinstance(record, dict) and record.get("run_accession"):
-                            run = str(record["run_accession"]).upper()
-                            run_ids.add(run)
-                            run_evidence.append(record)
-            except Exception as exc:
-                run_evidence.append({
-                    "srx": srx,
-                    "error": f"{type(exc).__name__}: {exc}",
-                })
+        run_ids = sorted({
+            str(record.get("run_accession")).strip().upper()
+            for record in run_evidence
+            if record.get("run_accession")
+        })
 
         recommendation = rank_recommendation(sources)
         reports[accession] = {
@@ -621,7 +651,7 @@ def run_audit(manifest_path: Path, output_path: Path, archs4_h5: str | None = No
             "sample_ids": sample_ids,
             "sra_relations": sra_links,
             "srx_ids": srx_ids,
-            "srr_ids": sorted(run_ids),
+            "srr_ids": run_ids,
             "srr_run_evidence": run_evidence,
             "sources": [asdict(x) for x in sources],
             "recommendation": recommendation,
@@ -640,7 +670,7 @@ def run_audit(manifest_path: Path, output_path: Path, archs4_h5: str | None = No
             })
 
     payload = {
-        "schema_version": "1.0",
+        "schema_version": "1.1",
         "tool": "scripts/source_rescue_audit.py",
         "manifest": str(manifest_path),
         "strict_source_types": sorted(STRICT_SOURCE_TYPES),
@@ -650,10 +680,7 @@ def run_audit(manifest_path: Path, output_path: Path, archs4_h5: str | None = No
     }
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-
-    csv_path = output_path.with_suffix(".csv")
-    pd.DataFrame(all_rows).to_csv(csv_path, index=False)
-
+    pd.DataFrame(all_rows).to_csv(output_path.with_suffix(".csv"), index=False)
     return payload
 
 
