@@ -565,6 +565,11 @@ def align(
     outdir = out_root / "alignments" / accession / gsm
     outdir.mkdir(parents=True, exist_ok=True)
     prefix = outdir / f"{gsm}."
+    bam = outdir / f"{gsm}.Aligned.sortedByCoord.out.bam"
+    done = outdir / "alignment.done.json"
+    if is_done(done) and bam.exists():
+        return bam
+
     cmd = [
         "STAR",
         "--runThreadN", str(threads),
@@ -585,9 +590,9 @@ def align(
         "--limitBAMsortRAM", str(30 * 1024 * 1024 * 1024),
     ]
     run(cmd)
-    bam = outdir / f"{gsm}.Aligned.sortedByCoord.out.bam"
     if not bam.exists():
         die(f"STAR completed without expected BAM: {bam}")
+    write_done(done, {"bam_sha256": sha256(bam)})
     return bam
 
 
