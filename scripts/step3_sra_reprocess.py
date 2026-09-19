@@ -358,7 +358,6 @@ def download_fastq(run_manifest: Path, out_root: Path, config: dict[str, Any]) -
             ])
             for fq in sorted(srr_dir.glob(f"{row['srr']}*.fastq")):
                 gz = Path(str(fq) + ".gz")
-                run(["gzip", "-c", str(fq)], cwd=fq.parent)
                 with gzip.open(gz, "wb") as out, fq.open("rb") as src:
                     shutil.copyfileobj(src, out)
                 fq.unlink()
