@@ -30,6 +30,7 @@ def test_geo_candidate_files_separates_normalized():
             "normalized_counts.txt.gz",
         ],
     }]
+    monkeypatch.setattr(audit, "geo_supplementary_listing", lambda accession: [])
     candidates, rejected = audit.geo_candidate_files(records, "GSE1")
     assert candidates == [
         "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE0nnn/GSE1/suppl/counts_raw.txt.gz"
@@ -138,3 +139,27 @@ def test_run_audit_writes_json_and_csv(tmp_path, monkeypatch):
     assert output.with_suffix(".csv").exists()
     assert payload["accessions"]["GSE1"]["srr_ids"] == ["SRR1"]
     assert payload["accessions"]["GSE1"]["recommendation"]["recommended_action"] == "validate_strict_candidate"
+
+
+def test_recount3_master_sample_matching(monkeypatch):
+    monkeypatch.setattr(
+        audit,
+        "recount3_master_samples",
+        lambda organism="mouse": [
+            {"external_id": "SRR1", "project": "SRP1"},
+            {"external_id": "SRR2", "project": "SRP1"},
+        ],
+    )
+    evidence = audit.recount3_evidence(
+        "GSE1",
+        ["GSM1"],
+        ["SRA: https://www.ncbi.nlm.nih.gov/sra?term=SRX1"],
+        [
+            {"study_accession": "SRP1", "experiment_accession": "SRX1", "run_accession": "SRR1"},
+            {"study_accession": "SRP1", "experiment_accession": "SRX1", "run_accession": "SRR2"},
+        ],
+    )
+    assert evidence.status == "candidate"
+    assert evidence.exact_sample_coverage == 2
+    assert evidence.exact_sample_expected == 2
+    assert evidence.provenance["projects"] == ["SRP1"]
