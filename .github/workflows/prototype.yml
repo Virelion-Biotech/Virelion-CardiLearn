@@ -23,7 +23,7 @@ jobs:
           cardilearn/research_model.py cardilearn/objectives.py cardilearn/conserved.py
           cardilearn/backbones.py cardilearn/representation_benchmark.py cardilearn/singlecell.py
           cardilearn/spatial.py cardilearn/trajectory.py cardilearn/torch_training.py
-          scripts/run_prototype.py scripts/train_real_data.py scripts/fetch_ncbi_metadata.py
+          scripts/run_prototype.py scripts/train_real_data.py scripts/fetch_ncbi_metadata.py scripts/source_rescue_audit.py
           tests/test_cardi_learn_prototype.py tests/test_interpretability.py
           tests/test_perturbation.py tests/test_benchmark_protocol.py tests/test_leakage.py
           tests/test_cross_species.py --select E9,F
@@ -46,7 +46,9 @@ jobs:
         run: pytest -q tests/test_benchmark_protocol.py
       - name: Run research representation and training tests
         run: pytest -q tests/test_research_model.py tests/test_torch_training.py tests/test_benchmark_suite.py tests/test_multimodal.py
-      - name: Compile real-data runner
-        run: python -m py_compile scripts/train_real_data.py
+      - name: Compile real-data and source-rescue runners
+        run: python -m py_compile scripts/train_real_data.py scripts/source_rescue_audit.py
+      - name: Run source-rescue audit unit tests
+        run: pytest -q tests/test_source_rescue_audit.py
       - name: Run synthetic smoke experiment
         run: python scripts/run_prototype.py
