@@ -678,6 +678,8 @@ def merge_counts(out_root: Path, accession: str, sample_ids: list[str]) -> Path:
     outdir = out_root / "matrices"
     outdir.mkdir(parents=True, exist_ok=True)
     output = outdir / f"{accession}.raw_counts.tsv.gz"
+    if output.exists():
+        return output
     with gzip.open(output, "wt", encoding="utf-8", newline="") as handle:
         handle.write("gene_id\t" + "\t".join(sample_ids) + "\n")
         for gene in genes:
