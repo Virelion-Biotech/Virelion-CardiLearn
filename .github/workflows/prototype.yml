@@ -47,8 +47,10 @@ jobs:
       - name: Run research representation and training tests
         run: pytest -q tests/test_research_model.py tests/test_torch_training.py tests/test_benchmark_suite.py tests/test_multimodal.py
       - name: Compile real-data and source-rescue runners
-        run: python -m py_compile scripts/train_real_data.py scripts/source_rescue_audit.py
+        run: python -m py_compile scripts/train_real_data.py scripts/source_rescue_audit.py scripts/step3_sra_reprocess.py
       - name: Run source-rescue audit unit tests
         run: pytest -q tests/test_source_rescue_audit.py
+      - name: Run SRA rescue unit tests
+        run: pytest -q tests/test_step3_sra_reprocess.py
       - name: Run synthetic smoke experiment
         run: python scripts/run_prototype.py
