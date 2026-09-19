@@ -43,6 +43,10 @@ Use the `notebooks/CardiLearn_v0_5_RealData_Validation_Colab.ipynb` notebook for
 
 The notebook requires a user-supplied locked dataset bundle; it does not invent or silently resolve ambiguous biological metadata. Large raw datasets and model checkpoints remain local to the Colab run unless the optional lightweight results push is enabled.
 
+### Source-rescue audit
+
+Before spending cloud compute on SRA reprocessing, run `scripts/source_rescue_audit.py` or `notebooks/Step3_Source_Rescue_Audit_Colab.ipynb`. It checks the locked GSMs against GEO supplementary candidates, NCBI/ENA SRA mappings, EMBL-EBI ArrayExpress/BioStudies and Expression Atlas evidence, optional ARCHS4 H5 sample availability, and recount3 project/run availability. It is fail-closed: ARCHS4 Kallisto-derived rounded values are not treated as strict raw counts, and recount3-derived counts are reported as derived rather than original submitter counts. Candidate sources still require content-scale, exact sample-mapping, provenance, and SHA-256 validation before entering Step 3 external sources.
+
 ## Inputs and outputs
 
 **Inputs:** transcriptomic gene/value matrices, sample metadata and biological grouping labels, task targets, model/training configuration, and benchmark definitions.
