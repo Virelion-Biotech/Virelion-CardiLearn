@@ -86,12 +86,9 @@ def http_text(url: str, *, timeout: int = 30) -> str:
         return response.read().decode("utf-8", errors="strict")
 
 
-def http_json(url: str, *, timeout: int = 30) -> dict[str, Any]:
+def http_json(url: str, *, timeout: int = 30) -> Any:
     text = http_text(url, timeout=timeout)
-    payload = json.loads(text)
-    if not isinstance(payload, dict):
-        raise ValueError(f"Expected JSON object from {url}")
-    return payload
+    return json.loads(text)
 
 
 def http_status(url: str, *, timeout: int = 20) -> int:
@@ -199,20 +196,28 @@ def extract_accessions(text: str, pattern: re.Pattern[str]) -> list[str]:
     return sorted({x.upper() for x in pattern.findall(text)})
 
 
-def ena_run_report(srx: str) -> dict[str, Any]:
+def ena_run_report(srx: str) -> list[dict[str, str]]:
     params = {
         "accession": srx,
         "result": "read_run",
-        "fields": "run_accession,read_count,base_count,fastq_ftp,fastq_bytes",
-        "format": "json",
+        "fields": "study_accession,experiment_accession,run_accession,read_count,base_count,fastq_ftp,fastq_bytes",
+        "format": "tsv",
     }
-    return http_json(f"{ENA_API}?{urlencode(params)}")
+    text = http_text(f"{ENA_API}?{urlencode(params)}")
+    lines = [line for line in text.splitlines() if line.strip()]
+    if not lines:
+        return []
+    headers = lines[0].split("\t")
+    return [
+        dict(zip(headers, line.split("\t")))
+        for line in lines[1:]
+        if line.strip()
+    ]
 
 
-def atlas_search(gse: str) -> dict[str, Any]:
+def atlas_search(gse: str) -> Any:
     params = {
         "query": gse,
-        "organism": "Mus musculus",
         "pageSize": 100,
         "page": 1,
     }
