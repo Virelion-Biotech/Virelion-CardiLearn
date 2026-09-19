@@ -39,5 +39,13 @@ jobs:
                       f"source={s['source_type']} status={s['status']} "
                       f"coverage={s['exact_sample_coverage']}/{s['exact_sample_expected']}"
                   )
+                  for candidate in s.get("candidate_files", [])[:20]:
+                      print("  candidate:", candidate)
+                  for note in s.get("notes", [])[:8]:
+                      print("  note:", note)
+                  provenance = s.get("provenance", {})
+                  if provenance:
+                      print("  provenance:", provenance)
+              print("SRA relations:", report.get("sra_relations", []))
               print()
           PY
