@@ -782,60 +782,94 @@ def pipeline(args: argparse.Namespace) -> None:
     invalid = sorted(selected - allowed)
     if invalid:
         die(f"selected accessions are not part of the four-cohort rescue lock: {invalid}")
+    if not selected:
+        die("no accessions selected")
     out_root = Path(args.work_dir).resolve()
     entries = manifest_entries(repo_root, selected)
-
     manifest_tsv = out_root / "metadata" / "locked_run_manifest.tsv"
+
     if args.step == "resolve":
         resolve(repo_root, out_root, selected)
         return
+
     if not manifest_tsv.exists():
         resolve(repo_root, out_root, selected)
 
-    if args.step in {"download", "all"}:
+    if args.step == "download":
         download_fastq(manifest_tsv, out_root, config)
-    if args.step in {"merge", "qc", "align", "count", "validate", "all"}:
-        # All downstream steps expect downloads. A separate command can be run independently
-        # after resolve/download.
-        if not (out_root / "raw").exists() and args.step != "validate":
-            die("raw directory missing; run download first")
-    if args.step in {"merge", "qc", "align", "count", "validate", "all"}:
+        write_done(out_root / "download.done.json", {"run_manifest_sha256": sha256(manifest_tsv)})
+        return
+
+    if args.step == "merge":
         for entry in entries:
             accession = str(entry["accession"]).upper()
             for gsm in sample_ids_for(accession, entries):
-                if args.step in {"merge", "qc", "align", "count", "all"}:
-                    r1, r2, layout = concatenate_sample(manifest_tsv, out_root, accession, gsm)
-                    if args.step in {"qc", "align", "count", "all"}:
-                        q1, q2 = run_fastp(r1, r2, out_root, accession, gsm, config)
-                    else:
-                        q1, q2 = r1, r2
-                    if args.step in {"align", "count", "all"}:
-                        idx, _, gtf = reference(repo_root, out_root, config, args.threads)
-                        bam = align(q1, q2, out_root, accession, gsm, idx, args.threads)
-                    else:
-                        bam = None
-                    if args.step in {"count", "all"}:
-                        if bam is None:
-                            die("internal state error: BAM not available for count step")
-                        feature_count(
-                            bam,
-                            gtf,
-                            out_root,
-                            accession,
-                            gsm,
-                            layout == "PAIRED",
-                            args.threads,
-                            config,
-                        )
-            if args.step in {"merge", "all"}:
-                merge_counts(out_root, accession, sample_ids_for(accession, entries))
-            if args.step in {"validate", "all"}:
-                matrix = out_root / "matrices" / f"{accession}.raw_counts.tsv.gz"
-                if not matrix.exists():
-                    die(f"{accession}: matrix missing for validation: {matrix}")
-                validate_matrix(matrix, repo_root, accession, sample_ids_for(accession, entries), out_root)
-        if args.step in {"validate", "all"}:
-            write_source_registry(out_root, sorted(selected))
+                concatenate_sample(manifest_tsv, out_root, accession, gsm)
+        return
+
+    if args.step == "qc":
+        for entry in entries:
+            accession = str(entry["accession"]).upper()
+            for gsm in sample_ids_for(accession, entries):
+                r1, r2, _ = concatenate_sample(manifest_tsv, out_root, accession, gsm)
+                run_fastp(r1, r2, out_root, accession, gsm, config)
+        return
+
+    if args.step in {"align", "count", "all"}:
+        idx, _, gtf = reference(repo_root, out_root, config, args.threads)
+        for entry in entries:
+            accession = str(entry["accession"]).upper()
+            for gsm in sample_ids_for(accession, entries):
+                r1, r2, layout = concatenate_sample(manifest_tsv, out_root, accession, gsm)
+                q1, q2 = run_fastp(r1, r2, out_root, accession, gsm, config)
+                bam = align(q1, q2, out_root, accession, gsm, idx, args.threads)
+                if args.step in {"count", "all"}:
+                    feature_count(
+                        bam,
+                        gtf,
+                        out_root,
+                        accession,
+                        gsm,
+                        layout == "PAIRED",
+                        args.threads,
+                        config,
+                    )
+        if args.step == "align":
+            return
+
+    if args.step in {"count", "all"}:
+        # Count-only requires BAMs from a previous alignment run; don't rerun alignment.
+        idx, _, gtf = reference(repo_root, out_root, config, args.threads)
+        for entry in entries:
+            accession = str(entry["accession"]).upper()
+            for gsm in sample_ids_for(accession, entries):
+                bam = out_root / "alignments" / accession / gsm / f"{gsm}.Aligned.sortedByCoord.out.bam"
+                if not bam.exists():
+                    die(f"{accession}/{gsm}: BAM missing before count: {bam}")
+                rows = raw_rows(manifest_tsv, accession, gsm)
+                if not rows:
+                    die(f"{accession}/{gsm}: no run metadata")
+                layout = rows[0]["library_layout"].upper()
+                feature_count(
+                    bam,
+                    gtf,
+                    out_root,
+                    accession,
+                    gsm,
+                    layout == "PAIRED",
+                    args.threads,
+                    config,
+                )
+
+    if args.step in {"validate", "all", "count"}:
+        for entry in entries:
+            accession = str(entry["accession"]).upper()
+            sample_ids = sample_ids_for(accession, entries)
+            matrix = out_root / "matrices" / f"{accession}.raw_counts.tsv.gz"
+            if not matrix.exists():
+                matrix = merge_counts(out_root, accession, sample_ids)
+            validate_matrix(matrix, repo_root, accession, sample_ids, out_root)
+        write_source_registry(out_root, sorted(selected))
 
 
 def build_parser() -> argparse.ArgumentParser:
