@@ -443,15 +443,20 @@ def concatenate_sample(run_manifest: Path, out_root: Path, accession: str, gsm: 
     r1_out = merged / f"{gsm}_R1.fastq.gz"
     r2_out = merged / f"{gsm}_R2.fastq.gz"
 
+    def concat_files(inputs: list[Path], output: Path) -> None:
+        if output.exists():
+            return
+        with output.open("wb") as target:
+            for source in inputs:
+                with source.open("rb") as handle:
+                    shutil.copyfileobj(handle, target, length=1024 * 1024)
+
     if layout == "SINGLE":
-        run(["bash", "-lc", "cat " + " ".join("'" + str(p) + "'" for p in files_by_end["single"]) +
-             " > '" + str(single_out) + "'"])
+        concat_files(files_by_end["single"], single_out)
         return single_out, None, layout
 
-    run(["bash", "-lc", "cat " + " ".join("'" + str(p) + "'" for p in files_by_end["r1"]) +
-         " > '" + str(r1_out) + "'"])
-    run(["bash", "-lc", "cat " + " ".join("'" + str(p) + "'" for p in files_by_end["r2"]) +
-         " > '" + str(r2_out) + "'"])
+    concat_files(files_by_end["r1"], r1_out)
+    concat_files(files_by_end["r2"], r2_out)
     return r1_out, r2_out, layout
 
 
