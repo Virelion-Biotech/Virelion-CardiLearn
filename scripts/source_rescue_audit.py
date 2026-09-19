@@ -26,7 +26,7 @@ import ssl
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
-from urllib.error import HTTPError, URLError
+from urllib.error import HTTPError
 from urllib.parse import quote, urlencode, urljoin, urlparse
 from urllib.request import Request, urlopen
 
