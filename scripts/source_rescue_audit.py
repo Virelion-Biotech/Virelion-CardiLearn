@@ -30,7 +30,6 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode, urljoin, urlparse
 from urllib.request import Request, urlopen
 
-import h5py
 import pandas as pd
 
 
@@ -340,6 +339,17 @@ def archs4_evidence(
             accession=gse,
             sample_ids=sample_ids,
             notes=[f"ARCHS4 H5 not found: {path}"],
+        )
+
+    try:
+        import h5py
+    except ImportError:
+        return SourceEvidence(
+            source_type="archs4_kallisto_rounded",
+            status="not_checked_dependency_missing",
+            accession=gse,
+            sample_ids=sample_ids,
+            notes=["Install h5py to inspect a supplied ARCHS4 H5 file."],
         )
 
     try:
