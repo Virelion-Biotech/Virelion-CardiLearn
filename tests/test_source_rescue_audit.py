@@ -1,9 +1,14 @@
+import importlib.util
 import json
 from pathlib import Path
 
 import pytest
 
-from scripts import source_rescue_audit as audit
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "source_rescue_audit.py"
+SPEC = importlib.util.spec_from_file_location("source_rescue_audit", SCRIPT)
+assert SPEC and SPEC.loader
+audit = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(audit)
 
 
 def test_extract_accessions():
