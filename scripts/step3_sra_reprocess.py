@@ -609,6 +609,10 @@ def feature_count(
     outdir = out_root / "counts" / accession
     outdir.mkdir(parents=True, exist_ok=True)
     output = outdir / f"{gsm}.featureCounts.txt"
+    done = outdir / f"{gsm}.done.json"
+    if is_done(done) and output.exists():
+        return output
+
     cmd = [
         "featureCounts",
         "-T", str(threads),
@@ -623,6 +627,10 @@ def feature_count(
     run(cmd + [str(bam)])
     if not output.exists():
         die(f"featureCounts completed without expected output: {output}")
+    write_done(done, {
+        "counts_sha256": sha256(output),
+        "paired": paired,
+    })
     return output
 
 
