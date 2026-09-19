@@ -91,6 +91,13 @@ def http_json(url: str, *, timeout: int = 30) -> Any:
     return json.loads(text)
 
 
+def http_gzip_text(url: str, *, timeout: int = 60) -> str:
+    request = Request(url, headers={"User-Agent": USER_AGENT})
+    context = ssl.create_default_context()
+    with urlopen(request, timeout=timeout, context=context) as response:
+        return gzip.decompress(response.read()).decode("utf-8", errors="strict")
+
+
 def http_status(url: str, *, timeout: int = 20) -> int:
     request = Request(url, method="HEAD", headers={"User-Agent": USER_AGENT})
     context = ssl.create_default_context()
@@ -157,11 +164,44 @@ def geo_metadata(accession: str) -> tuple[dict[str, dict[str, Any]], str]:
     return parse_geo_soft(text), url
 
 
+def geo_supplementary_listing(accession: str) -> list[str]:
+    base = f"{series_root(accession)}suppl/"
+    html = http_text(base, timeout=45)
+    out: set[str] = set()
+    for href in re.findall(r'href=["\']([^"\']+)["\']', html, re.I):
+        if not href or href.startswith(("#", "?", "../", "./", "mailto:", "javascript:")):
+            continue
+        url = urljoin(base, href.strip())
+        parsed = urlparse(url)
+        if parsed.netloc != urlparse(base).netloc or not parsed.path.startswith(urlparse(base).path):
+            continue
+        name = Path(parsed.path).name
+        if not name:
+            continue
+        low = name.lower()
+        if low == "filelist.txt":
+            continue
+        if low.endswith((".txt", ".tsv", ".csv", ".tab", ".gz", ".tar", ".tar.gz", ".tgz", ".zip")):
+            out.add(url)
+    return sorted(out)
+
+
+def _candidate_priority(url: str) -> tuple[int, str]:
+    name = Path(urlparse(url).path).name.lower()
+    score = 0
+    for token in RAW_TOKENS:
+        if token in name:
+            score -= 10
+    if any(token in name for token in REJECT_TOKENS):
+        score += 10000
+    return score, name
+
+
 def geo_candidate_files(
     sample_records: list[dict[str, Any]],
     accession: str,
 ) -> tuple[list[str], list[str]]:
-    candidates: set[str] = set()
+    explicit: set[str] = set()
     rejected: set[str] = set()
     base = f"{series_root(accession)}suppl/"
     for record in sample_records:
@@ -177,12 +217,28 @@ def geo_candidate_files(
                 url = "https://" + url[6:]
             elif not url.startswith(("http://", "https://")):
                 url = urljoin(base, raw.lstrip("/"))
-            name = Path(urlparse(url).path).name.lower()
-            if any(token in name for token in REJECT_TOKENS):
-                rejected.add(url)
-            elif any(token in name for token in RAW_TOKENS):
-                candidates.add(url)
-    return sorted(candidates), sorted(rejected)
+            explicit.add(url)
+
+    listing: list[str] = []
+    try:
+        listing = geo_supplementary_listing(accession)
+    except Exception:
+        listing = []
+
+    all_urls = sorted(explicit | set(listing))
+    candidates: list[str] = []
+    for url in all_urls:
+        name = Path(urlparse(url).path).name.lower()
+        if any(token in name for token in REJECT_TOKENS):
+            rejected.add(url)
+            continue
+        # Keep annotation/sequence archives out of expression-source discovery.
+        if re.search(r"\.(?:gtf|gff3?|bed|fa|fasta|fna|bam|sam|cram|vcf|bw|bigwig)(?:\.gz)?$", name):
+            continue
+        if name.endswith((".txt", ".tsv", ".csv", ".tab", ".gz", ".tar", ".tar.gz", ".tgz", ".zip")):
+            candidates.append(url)
+
+    return sorted(set(candidates), key=_candidate_priority)[:100], sorted(rejected)
 
 
 def extract_sra_links(record: dict[str, Any]) -> list[str]:
@@ -422,20 +478,41 @@ def archs4_evidence(
     )
 
 
-def recount3_project_candidates(sra_links: Iterable[str]) -> list[str]:
-    text = " ".join(map(str, sra_links))
-    return sorted(set(PROJECT_RE.findall(text)))
-
-
 def recount3_project_candidates(accessions: Iterable[str]) -> list[str]:
     projects = set()
     for accession in accessions:
         value = str(accession).strip().upper()
-        if PROJECT_RE.fullmatch(value):
-            projects.add(value)
-        elif value.startswith("PRJNA"):
+        if PROJECT_RE.fullmatch(value) or value.startswith("PRJNA"):
             projects.add(value)
     return sorted(projects)
+
+
+def recount3_master_samples(organism: str = "mouse") -> list[dict[str, str]]:
+    urls = [
+        f"https://duffel.rail.bio/recount3/{organism}/data_sources/sra/metadata/sra.recount_project.MD.gz",
+        f"http://duffel.rail.bio/recount3/{organism}/data_sources/sra/metadata/sra.recount_project.MD.gz",
+        f"https://recount-opendata.s3.amazonaws.com/recount3/release/{organism}/data_sources/sra/metadata/sra.recount_project.MD.gz",
+    ]
+    last_error: Exception | None = None
+    for url in urls:
+        try:
+            text = http_gzip_text(url, timeout=90)
+            lines = [line for line in text.splitlines() if line.strip()]
+            if not lines:
+                return []
+            headers = [h.strip() for h in lines[0].split("\t")]
+            rows: list[dict[str, str]] = []
+            for line in lines[1:]:
+                values = line.split("\t")
+                if len(values) != len(headers):
+                    continue
+                rows.append(dict(zip(headers, values)))
+            return rows
+        except Exception as exc:
+            last_error = exc
+    if last_error:
+        raise last_error
+    return []
 
 
 def recount3_evidence(
@@ -444,89 +521,97 @@ def recount3_evidence(
     sra_links: list[str],
     ena_records: list[dict[str, str]] | None = None,
 ) -> SourceEvidence:
-    srx_ids = sorted({
-        accession
-        for relation in sra_links
-        for accession in extract_accessions(relation, SRX_RE)
-    })
     records = ena_records or []
     run_ids = sorted({
         str(record.get("run_accession", "")).strip().upper()
         for record in records
         if record.get("run_accession")
     })
-    run_sizes = {
-        str(record["run_accession"]).strip().upper(): {
-            "read_count": record.get("read_count"),
-            "base_count": record.get("base_count"),
-            "fastq_bytes": record.get("fastq_bytes"),
-            "fastq_ftp": record.get("fastq_ftp"),
-            "srx": record.get("experiment_accession", ""),
-            "study_accession": record.get("study_accession", ""),
-        }
-        for record in records
-        if record.get("run_accession")
-    }
-    projects = recount3_project_candidates(
-        [record.get("study_accession", "") for record in records]
-        + [x for x in re.findall(r"\b(?:SRP|ERP|DRP|PRJNA)\d+\b", " ".join(sra_links), re.I)]
-    )
     if not run_ids:
         return SourceEvidence(
             source_type="recount3_derived_read_counts",
             status="not_found",
             accession=gse,
             sample_ids=sample_ids,
-            exact_sample_expected=0,
             notes=["No SRR run accessions were resolved from ENA for the locked SRX records."],
-            provenance={"projects": projects, "ena_run_sizes": run_sizes},
         )
 
-    checked_urls: list[str] = []
-    matched_runs: set[str] = set()
-    for project in projects:
-        for mirror in RECOUNT3_MIRRORS:
-            suffix = project[-2:] if project.startswith(("SRP", "ERP", "DRP")) else None
-            if suffix is None:
-                continue
-            url = (
-                f"{mirror}/mouse/data_sources/sra/metadata/{suffix}/{project}/"
-                f"sra.sra.{project}.MD.gz"
-            )
-            try:
-                status = http_status(url)
-            except Exception:
-                continue
-            if status >= 400:
-                continue
-            checked_urls.append(url)
-            try:
-                req = Request(url, headers={"User-Agent": USER_AGENT})
-                with urlopen(req, timeout=60) as response:
-                    blob = response.read()
-                raw = gzip.decompress(blob).decode("utf-8", errors="replace")
-                matched_runs.update(run for run in run_ids if run in raw)
-            except Exception:
-                continue
+    try:
+        master = recount3_master_samples("mouse")
+    except Exception as exc:
+        return SourceEvidence(
+            source_type="recount3_derived_read_counts",
+            status="unavailable",
+            accession=gse,
+            sample_ids=sample_ids,
+            run_ids=run_ids,
+            exact_sample_expected=len(run_ids),
+            notes=[f"recount3 master sample index unavailable: {type(exc).__name__}: {exc}"],
+        )
 
-    status = "candidate" if len(matched_runs) == len(run_ids) else (
-        "partial" if matched_runs else "project_found_but_sample_match_unconfirmed"
-    )
+    external_key = next(
+        (key for key in master[0].keys() if key == "external_id" or key.endswith(".external_id")),
+        None,
+    ) if master else None
+    project_key = next(
+        (key for key in master[0].keys() if key == "project" or key.endswith(".project")),
+        None,
+    ) if master else None
+    if external_key is None:
+        return SourceEvidence(
+            source_type="recount3_derived_read_counts",
+            status="unavailable",
+            accession=gse,
+            sample_ids=sample_ids,
+            run_ids=run_ids,
+            exact_sample_expected=len(run_ids),
+            notes=["recount3 master sample index did not expose an external_id column."],
+        )
+
+    indexed = {
+        str(row[external_key]).strip().upper(): row
+        for row in master
+        if row.get(external_key)
+    }
+    matched_runs = sorted(set(run_ids) & set(indexed))
+    projects = sorted({
+        str(indexed[run].get(project_key, "")).strip().upper()
+        for run in matched_runs
+        if project_key and indexed[run].get(project_key)
+    })
+    missing_runs = sorted(set(run_ids) - set(matched_runs))
+
+    if len(matched_runs) == len(run_ids):
+        status = "candidate"
+    elif matched_runs:
+        status = "partial"
+    else:
+        status = "not_found"
+
     notes = [
-        "recount3 is derived from uniformly processed SRA data.",
+        "recount3 master sample index was queried directly by exact SRR external_id.",
         "recount3 gene raw_counts are base-pair coverage counts; any read-count conversion is derived and must not be labeled original submitter raw counts.",
     ]
+    if missing_runs:
+        notes.append(f"{len(missing_runs)} resolved SRR runs were absent from the current recount3 mouse index.")
+
     return SourceEvidence(
         source_type="recount3_derived_read_counts",
         status=status,
         accession=gse,
         sample_ids=sample_ids,
-        source_urls=checked_urls,
+        source_urls=[
+            "https://duffel.rail.bio/recount3/mouse/data_sources/sra/metadata/sra.recount_project.MD.gz"
+        ],
         exact_sample_coverage=len(matched_runs),
         exact_sample_expected=len(run_ids),
-        run_ids=sorted(run_ids),
+        run_ids=run_ids,
         notes=notes,
-        provenance={"projects": projects, "ena_run_sizes": run_sizes, "matched_runs": sorted(matched_runs)},
+        provenance={
+            "projects": projects,
+            "matched_runs": matched_runs,
+            "missing_runs": missing_runs,
+        },
     )
 
 
@@ -559,9 +644,21 @@ def load_manifest(path: Path) -> list[dict[str, Any]]:
 
 
 def rank_recommendation(evidence: list[SourceEvidence]) -> dict[str, Any]:
-    strict = [e for e in evidence if e.status in {"candidate", "available"} and e.source_type in STRICT_SOURCE_TYPES]
-    derived = [e for e in evidence if e.status in {"candidate", "available"} and e.source_type in DERIVED_SOURCE_TYPES]
-    archs4 = [e for e in evidence if e.source_type == "archs4_kallisto_rounded" and e.status == "available"]
+    strict = [
+        e for e in evidence
+        if e.status in {"candidate", "available"}
+        and e.source_type in STRICT_SOURCE_TYPES
+    ]
+    derived = [
+        e for e in evidence
+        if e.status in {"candidate", "available"}
+        and e.source_type in DERIVED_SOURCE_TYPES
+    ]
+    archs4 = [
+        e for e in evidence
+        if e.source_type == "archs4_kallisto_rounded"
+        and e.status in {"available", "partial"}
+    ]
     if strict:
         return {
             "recommended_action": "validate_strict_candidate",
@@ -572,18 +669,18 @@ def rank_recommendation(evidence: list[SourceEvidence]) -> dict[str, Any]:
         return {
             "recommended_action": "retain_as_derived_fallback",
             "source_type": derived[0].source_type,
-            "reason": "recount3-derived evidence exists, but it is not equivalent to original submitter raw read counts.",
+            "reason": "recount3 contains the exact SRA runs, but its counts are derived from uniformly processed coverage rather than the original submitter count table.",
         }
     if archs4:
         return {
             "recommended_action": "do_not_promote_archs4",
             "source_type": "archs4_kallisto_rounded",
-            "reason": "ARCHS4 sample coverage exists, but its gene-level values are rounded Kallisto pseudocounts.",
+            "reason": "ARCHS4 sample coverage exists, but its gene-level values are Kallisto-derived/rounded and do not satisfy the strict raw-count contract.",
         }
     return {
         "recommended_action": "reprocess_sra",
         "source_type": "sra",
-        "reason": "No acceptable strict source was discovered; reprocess raw reads with a pinned reference/counting pipeline.",
+        "reason": "No acceptable strict or derived source was discovered; reprocess raw reads with a pinned reference/counting pipeline.",
     }
 
 
