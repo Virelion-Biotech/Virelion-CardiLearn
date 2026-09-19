@@ -233,7 +233,7 @@ def geo_candidate_files(
             rejected.add(url)
             continue
         # Keep annotation/sequence archives out of expression-source discovery.
-        if re.search(r"\.(?:gtf|gff3?|bed|fa|fasta|fna|bam|sam|cram|vcf|bw|bigwig)(?:\.gz)?$", name):
+        if re.search(r"\.(?:gtf|gff3?|bed|fa|fasta|fna|bam|sam|cram|vcf|bw|bigwig|fastq|fq)(?:\.gz)?$", name):
             continue
         if name.endswith((".txt", ".tsv", ".csv", ".tab", ".gz", ".tar", ".tar.gz", ".tgz", ".zip")):
             candidates.append(url)
