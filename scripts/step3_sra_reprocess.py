@@ -96,6 +96,18 @@ def run(cmd: list[str], cwd: Path | None = None) -> str:
     return proc.stdout
 
 
+def write_done(path: Path, payload: dict[str, Any] | None = None) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(payload or {}, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def is_done(path: Path) -> bool:
+    return path.is_file()
+
+
 def load_json(path: Path) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
