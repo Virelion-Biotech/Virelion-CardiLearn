@@ -352,8 +352,22 @@ def download_fastq(run_manifest: Path, out_root: Path, config: dict[str, Any]) -
     for row in rows:
         dest = fastq_dest(row, raw_root)
         if row["fastq_ftp"]:
+            expected_md5 = row["fastq_md5"].strip().lower()
+            expected_bytes = int(row["fastq_bytes"]) if row["fastq_bytes"].strip().isdigit() else 0
+            if dest.exists() and expected_md5 and md5(dest).lower() == expected_md5:
+                if expected_bytes and dest.stat().st_size != expected_bytes:
+                    die(
+                        f"size/checksum contradiction for {dest}: "
+                        f"MD5 matches but size is {dest.stat().st_size}, expected {expected_bytes}"
+                    )
+                continue
             download_resume(normalize_ftp(row["fastq_ftp"]), dest)
-            actual_md5 = verify_expected_md5(dest, row["fastq_md5"], fail_on_missing)
+            if expected_bytes and dest.stat().st_size != expected_bytes:
+                die(
+                    f"downloaded size mismatch for {dest}: "
+                    f"got {dest.stat().st_size}, expected {expected_bytes}"
+                )
+            actual_md5 = verify_expected_md5(dest, expected_md5, fail_on_missing)
             (dest.with_suffix(dest.suffix + ".md5")).write_text(actual_md5 + "\n", encoding="utf-8")
         else:
             # Fallback: NCBI SRA Toolkit.
