@@ -3,8 +3,6 @@ import json
 import sys
 from pathlib import Path
 
-import pytest
-
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "source_rescue_audit.py"
 SPEC = importlib.util.spec_from_file_location("source_rescue_audit", SCRIPT)
 assert SPEC and SPEC.loader
@@ -23,7 +21,7 @@ def test_series_root():
     assert audit.series_root("GSE232259").endswith("/series/GSE232nnn/GSE232259/")
 
 
-def test_geo_candidate_files_separates_normalized():
+def test_geo_candidate_files_separates_normalized(monkeypatch):
     records = [{
         "geo_accession": "GSM1",
         "supplementary_file": [
@@ -32,8 +30,11 @@ def test_geo_candidate_files_separates_normalized():
             "normalized_counts.txt.gz",
         ],
     }]
+    monkeypatch.setattr(audit, "geo_supplementary_listing", lambda accession: [])
     candidates, rejected = audit.geo_candidate_files(records, "GSE1")
-    assert candidates == ["https://ftp.ncbi.nlm.nih.gov/geo/series/GSE0nnn/GSE1/suppl/counts_raw.txt.gz"]
+    assert candidates == [
+        "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE0nnn/GSE1/suppl/counts_raw.txt.gz"
+    ]
     assert len(rejected) == 2
 
 
@@ -74,6 +75,26 @@ def test_rank_falls_back_to_sra():
     assert result["recommended_action"] == "reprocess_sra"
 
 
+def test_ena_tsv_report_parser(monkeypatch):
+    tsv = (
+        "study_accession\texperiment_accession\trun_accession\tread_count\tbase_count\tfastq_ftp\tfastq_bytes\n"
+        "SRP1\tSRX1\tSRR1\t100\t10000\tftp://example/SRR1.fastq.gz\t1234\n"
+    )
+    monkeypatch.setattr(audit, "http_text", lambda url, timeout=30: tsv)
+    rows = audit.ena_run_report("SRX1")
+    assert rows[0]["run_accession"] == "SRR1"
+    assert rows[0]["study_accession"] == "SRP1"
+
+
+def test_archs4_live_series_lookup(monkeypatch):
+    html = "<html>GSM1 GSM2</html>"
+    monkeypatch.setattr(audit, "http_text", lambda url, timeout=30: html)
+    evidence = audit.archs4_evidence("GSE1", ["GSM1", "GSM2"], None)
+    assert evidence.status == "available"
+    assert evidence.exact_sample_coverage == 2
+    assert evidence.exact_sample_expected == 2
+
+
 def test_run_audit_writes_json_and_csv(tmp_path, monkeypatch):
     manifest = tmp_path / "manifest.json"
     manifest.write_text(json.dumps({
@@ -95,15 +116,20 @@ def test_run_audit_writes_json_and_csv(tmp_path, monkeypatch):
     }
 
     monkeypatch.setattr(audit, "geo_metadata", lambda accession: (soft, "https://example/soft"))
-    monkeypatch.setattr(audit, "ena_run_report", lambda srx: {
-        "records": [{
-            "run_accession": "SRR1",
-            "read_count": "100",
-            "base_count": "10000",
-            "fastq_bytes": "1000",
-        }]
-    })
+    monkeypatch.setattr(audit, "ena_run_report", lambda srx: [{
+        "study_accession": "SRP1",
+        "experiment_accession": srx,
+        "run_accession": "SRR1",
+        "read_count": "100",
+        "base_count": "10000",
+        "fastq_bytes": "1000",
+    }])
     monkeypatch.setattr(audit, "atlas_search", lambda gse: {"hits": []})
+    monkeypatch.setattr(
+        audit,
+        "http_text",
+        lambda url, timeout=30: "<html>GSM1</html>" if "archs4/series" in url else "",
+    )
     monkeypatch.setattr(audit, "http_status", lambda url: 404)
 
     output = tmp_path / "report.json"
@@ -113,3 +139,27 @@ def test_run_audit_writes_json_and_csv(tmp_path, monkeypatch):
     assert output.with_suffix(".csv").exists()
     assert payload["accessions"]["GSE1"]["srr_ids"] == ["SRR1"]
     assert payload["accessions"]["GSE1"]["recommendation"]["recommended_action"] == "validate_strict_candidate"
+
+
+def test_recount3_master_sample_matching(monkeypatch):
+    monkeypatch.setattr(
+        audit,
+        "recount3_master_samples",
+        lambda organism="mouse": [
+            {"external_id": "SRR1", "project": "SRP1"},
+            {"external_id": "SRR2", "project": "SRP1"},
+        ],
+    )
+    evidence = audit.recount3_evidence(
+        "GSE1",
+        ["GSM1"],
+        ["SRA: https://www.ncbi.nlm.nih.gov/sra?term=SRX1"],
+        [
+            {"study_accession": "SRP1", "experiment_accession": "SRX1", "run_accession": "SRR1"},
+            {"study_accession": "SRP1", "experiment_accession": "SRX1", "run_accession": "SRR2"},
+        ],
+    )
+    assert evidence.status == "candidate"
+    assert evidence.exact_sample_coverage == 2
+    assert evidence.exact_sample_expected == 2
+    assert evidence.provenance["projects"] == ["SRP1"]
