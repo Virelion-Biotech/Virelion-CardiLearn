@@ -441,20 +441,36 @@ def concatenate_sample(run_manifest: Path, out_root: Path, accession: str, gsm: 
     return r1_out, r2_out, layout
 
 
-def run_fastp(r1: Path, r2: Path | None, out_root: Path, accession: str, gsm: str, config: dict[str, Any]) -> tuple[Path, Path | None]:
+def run_fastp(
+    r1: Path,
+    r2: Path | None,
+    out_root: Path,
+    accession: str,
+    gsm: str,
+    config: dict[str, Any],
+) -> tuple[Path, Path | None]:
     qc = out_root / "qc" / accession
     qc.mkdir(parents=True, exist_ok=True)
     html = qc / f"{gsm}.fastp.html"
     report_json = qc / f"{gsm}.fastp.json"
+    done = qc / f"{gsm}.done.json"
+    paired = r2 is not None
+    out1 = qc / f"{gsm}_R1.fastq.gz" if paired else qc / f"{gsm}.fastq.gz"
+    out2 = qc / f"{gsm}_R2.fastq.gz" if paired else None
 
-    args = ["fastp", "-w", str(config["resources"]["threads_default"]), "-j", str(report_json), "-h", str(html)]
-    if r2 is None:
-        out1 = qc / f"{gsm}.fastq.gz"
-        args += ["-i", str(r1), "-o", str(out1)]
-    else:
-        out1 = qc / f"{gsm}_R1.fastq.gz"
-        out2 = qc / f"{gsm}_R2.fastq.gz"
+    if is_done(done) and out1.exists() and (out2 is None or out2.exists()) and report_json.exists():
+        return out1, out2
+
+    args = [
+        "fastp",
+        "-w", str(config["resources"]["threads_default"]),
+        "-j", str(report_json),
+        "-h", str(html),
+    ]
+    if paired:
         args += ["-i", str(r1), "-I", str(r2), "-o", str(out1), "-O", str(out2)]
+    else:
+        args += ["-i", str(r1), "-o", str(out1)]
 
     qc_cfg = config["qc"]
     if not qc_cfg["trim_and_filter"]:
@@ -466,10 +482,18 @@ def run_fastp(r1: Path, r2: Path | None, out_root: Path, accession: str, gsm: st
             "--disable_trim_poly_x",
         ]
     else:
-        args += ["--cut_front", "--cut_tail", "--cut_mean_quality", str(qc_cfg["quality_cutoff"]),
-                 "--length_required", str(qc_cfg["minimum_read_length"])]
+        args += [
+            "--cut_front",
+            "--cut_tail",
+            "--cut_mean_quality", str(qc_cfg["quality_cutoff"]),
+            "--length_required", str(qc_cfg["minimum_read_length"]),
+        ]
     run(args)
-    return out1, (out2 if r2 is not None else None)
+    write_done(done, {
+        "input_r1_sha256": sha256(r1),
+        "input_r2_sha256": sha256(r2) if r2 else None,
+    })
+    return out1, out2
 
 
 def reference(repo_root: Path, out_root: Path, config: dict[str, Any], threads: int) -> tuple[Path, Path, Path]:
