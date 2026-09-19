@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,7 @@ SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "source_rescue_audit.
 SPEC = importlib.util.spec_from_file_location("source_rescue_audit", SCRIPT)
 assert SPEC and SPEC.loader
 audit = importlib.util.module_from_spec(SPEC)
+sys.modules[SPEC.name] = audit
 SPEC.loader.exec_module(audit)
 
 
