@@ -336,7 +336,7 @@ def expression_atlas_evidence(gse: str, sample_ids: list[str]) -> SourceEvidence
                     or hit.get("accessionCode")
                     or ""
                 ).strip()
-                if accession:
+                if accession and re.match(r"^[EA]-", accession, re.IGNORECASE):
                     experiment_hits.append(accession)
             search_urls.append(search_url)
             if experiment_hits:
