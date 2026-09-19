@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tarfile
 import zipfile
+from collections import Counter
 from pathlib import Path
 from typing import NoReturn
 from urllib.parse import unquote, urljoin, urlparse
@@ -54,6 +55,7 @@ MI_RE = re.compile(r"(?<![A-Za-z0-9])(?:mi\d*|m[.\s_-]*i|myocardial infarction|i
 SHAM_RE = re.compile(r"(?<![A-Za-z0-9])sham(?![A-Za-z0-9])|sham[-_ ]?operated|vehicle\s+control", re.I)
 FORBIDDEN_RE = re.compile(r"(?<![A-Za-z0-9])(?:fpkm|tpm|cpm|rpkm|normalized|normalised|log2|log1p)(?![A-Za-z0-9])", re.I)
 COUNT_RE = re.compile(r"^(?:count|counts|genecount|gene_count|readcount|read_count)$", re.I)
+COUNTISH_RE = re.compile(r"(?<![A-Za-z0-9])(?:read_?counts?|raw_?counts?|counts?|reads)(?![A-Za-z0-9])", re.I)
 
 # Explicit, human-approved sample-column mappings for count matrices whose column
 # headers cannot be tied to GEO metadata automatically. Fill ONLY from the
@@ -63,6 +65,34 @@ COUNT_RE = re.compile(r"^(?:count|counts|genecount|gene_count|readcount|read_cou
 # all listed columns exist in the candidate file, and it is recorded in provenance.
 COLUMN_OVERRIDES: dict[str, dict[str, str]] = {}
 
+# Accessions whose GEO supplementary files do NOT contain raw integer counts (GSE52313,
+# GSE186875, GSE232259, GSE308783 at the time of writing: only FPKM/TPM/normalized/estimated
+# values) can be supplied with a human-approved raw-count matrix, e.g. produced by
+# re-processing the SRA reads. The file still has to pass every count-scale / sample /
+# gene-identifier check below; nothing is substituted or rounded automatically.
+#     EXTERNAL_COUNT_SOURCES = {"GSE308783": {"source": "<https URL or local path>", "sha256": "<64 hex>"}}
+# The sha256 is mandatory and is recorded in the report provenance.
+EXTERNAL_COUNT_SOURCES: dict[str, dict[str, str]] = {}
+
+
+def load_external_count_sources() -> None:
+    """Merge external_count_sources.json (written by step3_sra_reprocess.py) if present.
+    Path: $STEP3_EXTERNAL_SOURCES, else /content/step3_reprocessed/external_count_sources.json."""
+    path = Path(os.environ.get("STEP3_EXTERNAL_SOURCES", "/content/step3_reprocessed/external_count_sources.json"))
+    if not path.is_file():
+        return
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for acc, entry in data.items():
+        if not re.fullmatch(r"GSE\d+", acc) or not entry.get("source") or not re.fullmatch(r"[0-9a-fA-F]{64}", str(entry.get("sha256", ""))):
+            raise ValueError(f"invalid entry for {acc!r} in {path}: needs 'source' and a 64-hex 'sha256'")
+        EXTERNAL_COUNT_SOURCES[acc] = entry
+    print(f"EXTERNAL COUNT SOURCES loaded from {path}: {sorted(data)}")
+
+
+load_external_count_sources()
+
+GENE_HEADER_RE = re.compile(r"^(?:gene[\s_.-]*)?(?:id|ids|symbol|symbols|name)$|^gene$|^genesymbol$", re.I)
+
 # Decorations that aligners / featureCounts append to sample names in matrix headers.
 PIPELINE_TAILS = (
     ".bam", ".sam", ".cram", "aligned.sortedbycoord.out", "aligned.out", ".sorted", "_sorted",
@@ -70,6 +100,15 @@ PIPELINE_TAILS = (
     "_rawcounts", "_raw_counts", ".counts", "_counts", ".count", "_count", "_raw",
     ".txt", ".tsv", ".csv",
 )
+# Some GEO matrices are keyed by gene symbol (GSE236374: header "Genesymbol"), but the
+# benchmark gene universe is Ensembl stable IDs (ENSMUSG...). Symbols are mapped 1:1 through
+# this pinned Ensembl GTF; the file hash and the mapped / unmapped / ambiguous counts are
+# written to the report provenance. Set to None to disable the mapping (the run then halts).
+ENSEMBL_GTF_URL = "https://ftp.ensembl.org/pub/release-112/gtf/mus_musculus/Mus_musculus.GRCm39.112.gtf.gz"
+GTF_GENE_ID_RE = re.compile(r'gene_id "([^"]+)"')
+GTF_GENE_NAME_RE = re.compile(r'gene_name "([^"]+)"')
+_SYMBOL_MAP_CACHE: dict[str, object] = {}
+
 TIME_TOKENS = {"day": "d", "days": "d", "dpi": "d"}
 REP_TOKENS = {"rep", "replicate", "r"}
 
@@ -101,6 +140,12 @@ def run_checked(cmd: list[str], cwd: Path | None = None, env: dict[str, str] | N
 
 def download(url: str, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    if not url.startswith(("http://", "https://")):  # approved local file (EXTERNAL_COUNT_SOURCES)
+        local_src = Path(url)
+        if not local_src.is_file():
+            halt(f"Local count source not found: {url}")
+        shutil.copyfile(local_src, path)
+        return
     try:
         with requests.get(url, timeout=TIMEOUT, stream=True, allow_redirects=True) as r:
             r.raise_for_status()
@@ -277,7 +322,12 @@ def sample_column_aliases(rec: dict[str, object]) -> set[str]:
     return exact | derived
 
 
-def describe_label_mismatch(columns: list[str], sample_records: list[dict[str, object]], limit: int = 40) -> str:
+def describe_label_mismatch(
+    columns: list[str],
+    sample_records: list[dict[str, object]],
+    limit: int = 40,
+    excluded: list[str] | None = None,
+) -> str:
     """Human-readable dump of matrix headers next to GEO labels, for the audit trail."""
     cols = [str(c) for c in columns]
     shown = cols[:limit] + ([f"... (+{len(cols) - limit} more)"] if len(cols) > limit else [])
@@ -291,10 +341,23 @@ def describe_label_mismatch(columns: list[str], sample_records: list[dict[str, o
         }
         for r in sample_records
     ]
+    note = ""
+    if excluded:
+        note = (
+            f"ignored {len(excluded)} normalized-scale columns (TPM/FPKM/CPM/...): "
+            f"{json.dumps([str(c) for c in excluded[:limit]])}; "
+        )
     return (
-        f"matrix headers (after the gene column): {json.dumps(shown)}; "
-        f"GEO labels: {json.dumps(labels)}"
+        note
+        + f"matrix headers considered (after the gene column): {json.dumps(shown)}; "
+        + f"GEO labels: {json.dumps(labels)}"
     )
+
+
+def tokens_contain(seq: list[str], sub: list[str]) -> bool:
+    """True if `sub` occurs as a contiguous run inside `seq`."""
+    n = len(sub)
+    return n > 0 and any(seq[i:i + n] == sub for i in range(len(seq) - n + 1))
 
 
 def resolve_matrix_sample_columns(
@@ -312,14 +375,16 @@ def resolve_matrix_sample_columns(
             for key in keys:
                 table.setdefault(key, set()).add(gsm)
 
-    resolved: dict[str, str] = {}
+    title_tokens = {
+        gsm: [k.split() for k in label_keys(rec.get("title", ""))]
+        for gsm, rec in by_gsm.items()
+    }
+
+    candidates: dict[str, list[str]] = {}
 
     def claim(gsm: str, column: str) -> None:
-        if gsm in resolved and resolved[gsm] != column:
-            raise ValueError(
-                f"multiple matrix columns map to GSM {gsm}: {resolved[gsm]!r} and {column!r}"
-            )
-        resolved[gsm] = column
+        if column not in candidates.setdefault(gsm, []):
+            candidates[gsm].append(column)
 
     for column in columns:
         text = str(column).strip()
@@ -343,12 +408,45 @@ def resolve_matrix_sample_columns(
         # 3) tokenised / reconstructed title, then 4) description / source / characteristics.
         #    Lower tiers must identify exactly one manifest sample, otherwise they are ignored.
         col_keys = label_keys(text)
+        placed = False
         for table in (derived_map, secondary_map):
             hits = {g for key in col_keys for g in table.get(key, ())}
             if len(hits) == 1:
                 claim(next(iter(hits)), column)
+                placed = True
                 break
+        if placed:
+            continue
 
+        # 5) containment: the GEO title is a contiguous run of header tokens or vice versa
+        #    (e.g. title 'sham_1' vs header 'MI_sham_1'; a leading 'MI' prefix is ignored).
+        #    Needs >= 2 shared tokens and a single best-scoring sample.
+        col_tokens = [k.split() for k in col_keys]
+        col_tokens += [t[1:] for t in col_tokens if len(t) > 2 and t[0] == "mi"]
+        best: dict[str, int] = {}
+        for gsm, token_lists in title_tokens.items():
+            for tt in token_lists:
+                for ct in col_tokens:
+                    n = min(len(tt), len(ct))
+                    if n >= 2 and (tokens_contain(ct, tt) or tokens_contain(tt, ct)):
+                        best[gsm] = max(best.get(gsm, 0), n)
+        if best:
+            top = max(best.values())
+            winners = [g for g, v in best.items() if v == top]
+            if len(winners) == 1:
+                claim(winners[0], column)
+
+    # One sample may own several columns (e.g. Count / TPM / FPKM blocks). Normalized-scale
+    # columns are removed before this function is called; if several columns still remain,
+    # only a single count-like header may break the tie, otherwise the mapping is ambiguous.
+    resolved: dict[str, str] = {}
+    for gsm, cols in candidates.items():
+        if len(cols) > 1:
+            countish = [c for c in cols if COUNTISH_RE.search(str(c))]
+            if len(countish) != 1:
+                raise ValueError(f"multiple matrix columns map to GSM {gsm}: {cols}")
+            cols = countish
+        resolved[gsm] = cols[0]
     return resolved
 
 
@@ -396,6 +494,8 @@ def listing_urls(url: str) -> list[str]:
 
 
 def source_urls(acc: str, samples: list[dict[str, object]]) -> list[str]:
+    if acc in EXTERNAL_COUNT_SOURCES:
+        return [str(EXTERNAL_COUNT_SOURCES[acc]["source"])]
     expected = {str(x["geo_accession"]).upper() for x in samples}
     explicit: set[str] = set()
     per_gsm: dict[str, str] = {}
@@ -443,7 +543,12 @@ def candidate_score(url: str) -> int:
     return score
 
 
+ANNOTATION_RE = re.compile(r"\.(?:gtf|gff3?|bed|bedgraph|fa|fasta|fna|bam|sam|cram|vcf|bw|bigwig)(?:\.gz)?$", re.I)
+
+
 def usable_file(name: str) -> bool:
+    if ANNOTATION_RE.search(name):  # e.g. GSE52313_transcripts.gtf.gz (141 MB): never an expression table
+        return False
     return name.lower().endswith((".txt", ".tsv", ".csv", ".tab", ".gz", ".tar", ".tar.gz", ".tgz", ".zip"))
 
 
@@ -521,6 +626,53 @@ def read_table(path: Path) -> pd.DataFrame:
     raise ValueError(f"unable to parse tabular file: {last_error}")
 
 
+def count_scale_problem(series: pd.Series, name: object) -> str | None:
+    """Why a column is not raw integer counts (None when it is)."""
+    values = pd.to_numeric(series, errors="coerce").to_numpy(float)
+    n = len(values)
+    bad = int((~np.isfinite(values)).sum())
+    if bad:
+        return f"{name!r}: {bad} of {n} entries are missing/non-numeric/non-finite"
+    if (values < 0).any():
+        return f"{name!r}: contains negative values"
+    frac = values != np.rint(values)
+    if frac.any():
+        total = float(values.sum())
+        hint = " (sums to ~1e6: TPM-like)" if abs(total - 1e6) <= 2e3 else ""
+        examples = [round(float(x), 4) for x in values[frac][:3]]
+        return (
+            f"{name!r}: {int(frac.sum())} of {n} values are non-integer (e.g. {examples}); "
+            f"column sum={total:,.2f}{hint} -> normalized/estimated values, not raw integer counts"
+        )
+    return None
+
+
+def clean_gene_ids(series: pd.Series) -> pd.Series:
+    return series.astype(str).str.strip().str.strip("'\"").str.strip()
+
+
+def select_gene_column(df: pd.DataFrame) -> object:
+    """Pick the identifier column: an Ensembl-id column if any, else (when column 0 is a bare
+    numeric id such as Entrez) a symbol-named column, else column 0."""
+    first = df.columns[0]
+    others = [
+        c for c in df.columns[1:]
+        if pd.to_numeric(df[c], errors="coerce").notna().mean() < 0.5
+    ]
+    for c in [first, *others]:
+        ids = clean_gene_ids(df[c]).str.replace(r"\.\d+$", "", regex=True)
+        if len(ids) and float(ids.str.match(ENS_RE).mean()) >= 0.5:
+            return c
+    first_ids = clean_gene_ids(df[first])
+    if len(first_ids) and float(first_ids.str.fullmatch(r"\d+").mean()) >= 0.9:
+        for c in others:
+            if GENE_HEADER_RE.match(str(c).strip()):
+                ids = clean_gene_ids(df[c])
+                if float(ids.str.match(r"^[A-Za-z][A-Za-z0-9._\-()]*$").mean()) >= 0.5:
+                    return c
+    return first
+
+
 def integer_values(series: pd.Series) -> tuple[np.ndarray, bool]:
     values = pd.to_numeric(series, errors="coerce").to_numpy(float)
     ok = np.isfinite(values).all() and (values >= 0).all()
@@ -537,8 +689,23 @@ def parse_count_file(
     df = read_table(path)
     expected = [str(rec["geo_accession"]).upper() for rec in sample_records]
     expected_upper = set(expected)
-    gene_col = df.columns[0]
-    sample_columns = list(df.columns[1:])
+    gene_col = select_gene_column(df)
+    all_columns = [c for c in df.columns[1:] if c != gene_col]
+    # TPM / FPKM / CPM / normalized columns can never satisfy the raw-count contract, so they
+    # are excluded up front (a sample may carry Count + TPM + FPKM blocks in one table).
+    excluded = [c for c in all_columns if FORBIDDEN_RE.search(str(c))]
+    sample_columns = [c for c in all_columns if c not in set(excluded)]
+
+    # Scale gate before any label matching: a table with numeric value columns but not a single
+    # integer-like one (FPKM / TPM / normalized / estimated counts) can never satisfy the contract.
+    numeric_cols = [c for c in sample_columns if pd.to_numeric(df[c], errors="coerce").notna().mean() >= 0.98]
+    if numeric_cols and all(count_scale_problem(df[c], c) is not None for c in numeric_cols):
+        problems = [count_scale_problem(df[c], c) for c in numeric_cols[:2]]
+        raise ValueError(
+            f"no raw integer-like count columns: all {len(numeric_cols)} numeric value columns are "
+            f"non-integer or incomplete; {' | '.join(str(p) for p in problems)}"
+            + (f"; ignored {len(excluded)} TPM/FPKM-labelled columns" if excluded else "")
+        )
 
     # Matrix path: sample/GSM identifiers, GEO sample-title aliases, or an explicit
     # human-approved override are present in the column names. Annotation columns
@@ -558,11 +725,18 @@ def parse_count_file(
             raise ValueError(
                 "matrix sample mapping is incomplete or contains unexpected "
                 f"locked units; missing={missing}; extra={extra}; "
-                + describe_label_mismatch(sample_columns, sample_records)
+                + describe_label_mismatch(sample_columns, sample_records, excluded=excluded)
             )
 
         out: dict[str, pd.Series] = {}
-        genes = df[gene_col].astype(str).str.strip()
+        genes = clean_gene_ids(df[gene_col])
+
+        scale_problems = [p for p in (count_scale_problem(df[matrix_cols[g]], matrix_cols[g]) for g in expected) if p]
+        if scale_problems:
+            raise ValueError(
+                f"{len(scale_problems)} of {len(expected)} mapped sample columns are not raw integer-like counts: "
+                + " | ".join(scale_problems[:3])
+            )
 
         for gsm in expected:
             col = matrix_cols[gsm]
@@ -586,25 +760,28 @@ def parse_count_file(
     if len(filename_ids) != 1:
         raise ValueError(
             "no unique manifest GSM in filename and no manifest GSM/title aliases in columns; "
-            + describe_label_mismatch(sample_columns, sample_records)
+            + describe_label_mismatch(sample_columns, sample_records, excluded=excluded)
         )
 
     gsm = filename_ids[0]
-    named_count_cols = [c for c in df.columns[1:] if COUNT_RE.fullmatch(str(c).strip())]
+    named_count_cols = [c for c in all_columns if COUNT_RE.fullmatch(str(c).strip())]
     if len(named_count_cols) == 0:
-        numeric_cols = []
-        for col in df.columns[1:]:
+        int_cols = []
+        for col in all_columns:
             _, integer = integer_values(df[col])
             if integer:
-                numeric_cols.append(col)
-        if len(numeric_cols) == 1:
-            named_count_cols = numeric_cols
+                int_cols.append(col)
+        if len(int_cols) == 1:
+            named_count_cols = int_cols
     if len(named_count_cols) != 1:
         raise ValueError(f"could not uniquely identify count column: {list(df.columns)}")
     values, integer = integer_values(df[named_count_cols[0]])
     if not integer:
-        raise ValueError("single-sample count column is not raw integer-like")
-    genes = df[gene_col].astype(str).str.strip()
+        raise ValueError(
+            "single-sample count column is not raw integer-like: "
+            + str(count_scale_problem(df[named_count_cols[0]], named_count_cols[0]))
+        )
+    genes = clean_gene_ids(df[gene_col])
     series = pd.Series(values.astype(np.int64), index=genes, name=gsm)
     series.attrs["source_column"] = str(named_count_cols[0])
     return {gsm: series}
@@ -621,6 +798,87 @@ def normalize_genes(df: pd.DataFrame) -> pd.DataFrame:
     if df["gene_id"].duplicated().any():
         halt("Duplicate stable mouse gene identifiers detected")
     return df
+
+
+def ensembl_fraction(index: pd.Index) -> float:
+    ids = pd.Index(index).astype(str).str.strip().str.replace(r"\.\d+$", "", regex=True)
+    return float(ids.str.match(ENS_RE).mean()) if len(ids) else 0.0
+
+
+def load_ensembl_symbol_map() -> tuple[dict[str, str], dict[str, object]]:
+    if ENSEMBL_GTF_URL is None:
+        halt(
+            "Count matrix is keyed by gene symbol, not Ensembl stable IDs, and "
+            "ENSEMBL_GTF_URL is disabled, so symbols cannot be mapped to ENSMUSG identifiers."
+        )
+    if "map" in _SYMBOL_MAP_CACHE:
+        return _SYMBOL_MAP_CACHE["map"], _SYMBOL_MAP_CACHE["info"]  # type: ignore[return-value]
+
+    local = SRC / "annotation" / Path(urlparse(ENSEMBL_GTF_URL).path).name
+    download(ENSEMBL_GTF_URL, local)
+    by_symbol: dict[str, set[str]] = {}
+    try:
+        with gzip.open(local, "rt", encoding="utf-8") as fh:
+            for line in fh:
+                if line.startswith("#"):
+                    continue
+                parts = line.rstrip("\n").split("\t")
+                if len(parts) < 9 or parts[2] != "gene":
+                    continue
+                gid = GTF_GENE_ID_RE.search(parts[8])
+                name = GTF_GENE_NAME_RE.search(parts[8])
+                if gid and name and ENS_RE.match(gid.group(1)):
+                    by_symbol.setdefault(name.group(1), set()).add(gid.group(1))
+    except Exception as exc:
+        halt(f"Ensembl annotation parsing failure.\nFile: {local}\nError: {type(exc).__name__}: {exc}")
+    if len(by_symbol) < 10_000:
+        halt(f"Ensembl annotation looks wrong: only {len(by_symbol)} annotated gene symbols in {local}")
+
+    symbol_map = {s: next(iter(ids)) for s, ids in by_symbol.items() if len(ids) == 1}
+    info = {
+        "annotation_url": ENSEMBL_GTF_URL,
+        "annotation_sha256": sha256_file(local),
+        "n_symbols_annotated": len(by_symbol),
+        "n_symbols_ambiguous_in_annotation": len(by_symbol) - len(symbol_map),
+    }
+    _SYMBOL_MAP_CACHE["map"], _SYMBOL_MAP_CACHE["info"] = symbol_map, info
+    return symbol_map, info
+
+
+def map_symbols_to_ensembl(parsed: dict[str, pd.Series]) -> tuple[dict[str, pd.Series], dict[str, object]]:
+    """Re-key symbol-indexed count vectors by ENSMUSG id. Strictly 1:1: symbols that are
+    missing from / ambiguous in the annotation, and ids hit by >1 input symbol, are dropped."""
+    symbol_map, info = load_ensembl_symbol_map()
+    out: dict[str, pd.Series] = {}
+    stats: dict[str, object] = {}
+    for gsm, series in parsed.items():
+        symbols = [str(x).strip() for x in series.index]
+        targets = [symbol_map.get(s) for s in symbols]
+        hits = Counter(t for t in targets if t is not None)
+        keep = np.array([t is not None and hits[t] == 1 for t in targets], dtype=bool)
+        mapped = pd.Series(
+            series.to_numpy()[keep],
+            index=pd.Index([t for t, k in zip(targets, keep) if k], name="gene_id"),
+            name=series.name,
+        )
+        mapped.attrs.update(series.attrs)
+        out[gsm] = mapped
+        if not stats:
+            stats = {
+                "n_input_symbols": len(symbols),
+                "n_unmapped_dropped": sum(t is None for t in targets),
+                "n_many_to_one_dropped": int(sum(t is not None and hits[t] > 1 for t in targets)),
+                "n_mapped": int(keep.sum()),
+            }
+    if stats and stats["n_mapped"] < 0.5 * stats["n_input_symbols"]:  # type: ignore[operator]
+        first = next(iter(parsed.values()))
+        halt(
+            "Gene identifiers could not be mapped to Ensembl: only "
+            f"{stats['n_mapped']} of {stats['n_input_symbols']} ids map through the pinned annotation. "
+            "The matrix is keyed by something other than mouse gene symbols or Ensembl stable IDs "
+            f"(first ids: {[str(x) for x in first.index[:8]]}; Entrez/RefSeq ids are not supported)."
+        )
+    return out, {"gene_id_source": "gene_symbol_mapped_to_ensembl", **info, **stats}
 
 
 def combine_series(parsed: dict[str, pd.Series], expected: list[str]) -> pd.DataFrame:
@@ -674,6 +932,12 @@ def acquire_counts(acc: str, rec: dict[str, object], samples: list[dict[str, obj
         local = SRC / acc / f"{idx:03d}_{filename}"
         download(url, local)
         downloaded.append({"url": url, "path": str(local), "sha256": sha256_file(local)})
+        external = EXTERNAL_COUNT_SOURCES.get(acc)
+        if external and downloaded[-1]["sha256"].lower() != str(external.get("sha256", "")).lower():
+            halt(
+                f"External count source for {acc} does not match its approved SHA256.\n"
+                f"Source: {url}\nExpected: {external.get('sha256', '<missing>')}\nActual:   {downloaded[-1]['sha256']}"
+            )
 
         files = [local]
         if local.name.lower().endswith((".tar", ".tar.gz", ".tgz", ".zip")):
@@ -698,6 +962,9 @@ def acquire_counts(acc: str, rec: dict[str, object], samples: list[dict[str, obj
                 })
 
                 if {x.upper() for x in parsed_samples} == {x.upper() for x in expected}:
+                    gene_mapping: dict[str, object] = {"gene_id_source": "ensembl_stable_ids"}
+                    if ensembl_fraction(next(iter(parsed_samples.values())).index) < 0.5:
+                        parsed_samples, gene_mapping = map_symbols_to_ensembl(parsed_samples)
                     matrix = combine_series(parsed_samples, expected)
                     return matrix, {
                         "source_contract": "raw_integer_like_counts",
@@ -708,6 +975,8 @@ def acquire_counts(acc: str, rec: dict[str, object], samples: list[dict[str, obj
                             for g, s in sorted(parsed_samples.items())
                         },
                         "column_overrides_used": bool(COLUMN_OVERRIDES.get(acc)),
+                        "external_count_source": EXTERNAL_COUNT_SOURCES.get(acc),
+                        "gene_id_mapping": gene_mapping,
                         "downloaded_sources": downloaded,
                         "candidate_audit": audit,
                     }
@@ -735,6 +1004,43 @@ def acquire_counts(acc: str, rec: dict[str, object], samples: list[dict[str, obj
         f"Candidate audit: {audit_path}\n"
         + json.dumps(audit, indent=2)
     )
+
+
+def consolidated_acquisition_message(
+    failures: dict[str, str],
+    passed: list[str],
+    train_fam: set[str],
+    val_fam: set[str],
+    test_fam: set[str],
+) -> str:
+    def role(acc: str) -> str:
+        return "train" if acc in train_fam else "validation" if acc in val_fam else "test" if acc in test_fam else "?"
+
+    lines = [
+        f"Raw integer-like count source contract failed for {len(failures)} of {len(ACCESSIONS)} accessions.",
+        f"Passed: {', '.join(passed) if passed else 'none'}",
+        "Failed:",
+    ]
+    for acc, message in failures.items():
+        audit_path = AUDIT / f"{acc}.json"
+        lines.append(f"  {acc} [{role(acc)}]  audit: {audit_path}")
+        if audit_path.exists():
+            data = json.loads(audit_path.read_text(encoding="utf-8"))
+            for c in data.get("candidate_audit", []):
+                if c.get("status") == "skipped":
+                    continue
+                name = Path(urlparse(str(c.get("url", ""))).path).name
+                lines.append(f"    - {name}: {c.get('status')}: {str(c.get('reason', ''))[:320]}")
+            if data.get("sra_relations"):
+                lines.append(f"    - SRA reads available: {data['sra_relations'][0]}")
+        else:
+            lines.append("    - " + message.splitlines()[0][:320])
+    lines.append(
+        "These studies do not publish raw integer counts in GEO supplementary files; FPKM/TPM/normalized/"
+        "estimated values are never substituted or rounded. Supply an approved raw-count matrix via "
+        "EXTERNAL_COUNT_SOURCES (mandatory SHA256), e.g. from re-processing the SRA reads, or amend the lock."
+    )
+    return "\n".join(lines)
 
 
 def metrics(y: np.ndarray, p: np.ndarray) -> dict[str, float]:
@@ -916,6 +1222,7 @@ def main() -> None:
 
     print("\nGEO METADATA RECONCILIATION + RAW COUNT SOURCE AUDIT")
 
+    acquisition_failures: dict[str, str] = {}
     for acc in ACCESSIONS:
         rec = by_acc[acc]
         soft_url = family_soft_url(acc)
@@ -960,11 +1267,20 @@ def main() -> None:
             for gsm, condition in zip(wanted, conditions)
         ]
 
-        matrix, info = acquire_counts(acc, rec, selected)
+        try:
+            matrix, info = acquire_counts(acc, rec, selected)
+        except Step3Halt as exc:
+            # Keep going so ONE report lists every accession that fails, not just the first.
+            acquisition_failures[acc] = str(exc)
+            print(f"{acc}: metadata={len(wanted)}; raw count source=FAIL")
+            continue
         matrices[acc] = matrix.set_index("gene_id")[wanted]
         provenance[acc] = {"family_soft_url": soft_url, **info}
 
         print(f"{acc}: metadata={len(wanted)}; genes={matrix.shape[0]}; raw count source=PASS")
+
+    if acquisition_failures:
+        halt(consolidated_acquisition_message(acquisition_failures, list(matrices), train_fam, val_fam, test_fam))
 
     meta = pd.DataFrame([x for rows in metadata.values() for x in rows]).set_index("sample_id")
     if not meta.index.is_unique:
