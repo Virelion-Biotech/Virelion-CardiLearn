@@ -1,0 +1,43 @@
+name: Source rescue live audit
+
+on:
+  push:
+    branches:
+      - work/source-rescue-fix
+
+permissions:
+  contents: read
+
+jobs:
+  live-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install audit dependencies
+        run: python -m pip install -e .
+      - name: Run live source-rescue audit
+        run: |
+          python scripts/source_rescue_audit.py \
+            --manifest data/manifest.lock.json \
+            --output /tmp/source_rescue_v1.json
+      - name: Print compact live results
+        run: |
+          python - <<'PY'
+          import json
+          p = json.load(open("/tmp/source_rescue_v1.json"))
+          for acc, report in sorted(p["accessions"].items()):
+              print(f"=== {acc} ===")
+              print("recommendation:", report.get("recommendation"))
+              print("SRX:", len(report.get("srx_ids", [])))
+              print("SRR:", len(report.get("srr_ids", [])))
+              for s in report.get("sources", []):
+                  print(
+                      f"source={s['source_type']} status={s['status']} "
+                      f"coverage={s['exact_sample_coverage']}/{s['exact_sample_expected']}"
+                  )
+              print()
+          PY
