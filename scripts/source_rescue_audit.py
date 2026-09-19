@@ -323,6 +323,12 @@ def expression_atlas_evidence(gse: str, sample_ids: list[str]) -> SourceEvidence
             payload = http_json(search_url)
             hits = _search_hits(payload)
             for hit in hits:
+                hit_text = json.dumps(hit, sort_keys=True).upper()
+                # General BioStudies search can return unrelated records that merely mention
+                # the accession in free text. Require the exact GSE token to occur in the
+                # returned study metadata before treating the record as a matching experiment.
+                if gse.upper() not in hit_text:
+                    continue
                 accession = str(
                     hit.get("accession")
                     or hit.get("id")
