@@ -21,7 +21,7 @@ def test_series_root():
     assert audit.series_root("GSE232259").endswith("/series/GSE232nnn/GSE232259/")
 
 
-def test_geo_candidate_files_separates_normalized():
+def test_geo_candidate_files_separates_normalized(monkeypatch):
     records = [{
         "geo_accession": "GSM1",
         "supplementary_file": [
