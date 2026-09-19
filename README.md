@@ -47,6 +47,16 @@ The notebook requires a user-supplied locked dataset bundle; it does not invent 
 
 Before spending cloud compute on SRA reprocessing, run `scripts/source_rescue_audit.py` or `notebooks/Step3_Source_Rescue_Audit_Colab.ipynb`. It checks the locked GSMs against GEO supplementary candidates, NCBI/ENA SRA mappings, EMBL-EBI ArrayExpress/BioStudies and Expression Atlas evidence, optional ARCHS4 H5 sample availability, and recount3 project/run availability. It is fail-closed: ARCHS4 Kallisto-derived rounded values are not treated as strict raw counts, and recount3-derived counts are reported as derived rather than original submitter counts. Candidate sources still require content-scale, exact sample-mapping, provenance, and SHA-256 validation before entering Step 3 external sources.
 
+### SRA raw-count rescue
+
+The four locked cohorts that fail the strict raw integer-count contract are now covered by a reproducible raw-read rescue workflow:
+
+`GSE232259`, `GSE52313`, `GSE186875`, and `GSE308783`.
+
+Run `scripts/step3_sra_reprocess.py` with `--step resolve` to create the exact GEO GSM → SRX → ENA SRR → FASTQ manifest, then `--step all` on a sufficiently provisioned Linux machine or Colab high-RAM runtime. The workflow uses pinned Mus musculus GRCm39 / Ensembl 112, fastp QC with read-preserving defaults, STAR, and featureCounts. It records source checksums, reference fingerprints, per-sample completion markers, and a validated `external_count_sources.json` that the existing Step 3 baseline runner can consume.
+
+See `docs/SRA_REPROCESSING_V1.md`, `configs/sra_reprocessing_v1.json`, `envs/sra_reprocessing_v1.yml`, and `notebooks/Step3_SRA_Reprocess_Colab.ipynb`.
+
 ## Inputs and outputs
 
 **Inputs:** transcriptomic gene/value matrices, sample metadata and biological grouping labels, task targets, model/training configuration, and benchmark definitions.
