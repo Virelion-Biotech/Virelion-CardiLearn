@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "virelion-cardilearn"
-version = "0.4.1"
+version = "0.4.2"
 description = "Reproducible machine learning for cardiac datasets."
 readme = "README.md"
 requires-python = ">=3.10"
