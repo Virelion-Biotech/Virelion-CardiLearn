@@ -3,6 +3,7 @@ import pandas as pd
 
 from cardilearn.config import SplitConfig, TrainingConfig
 from cardilearn.data import Dataset
+from cardilearn.metrics import classification_metrics, regression_metrics
 from cardilearn.training import evaluate_held_out_test, train
 
 
@@ -23,3 +24,27 @@ def test_training_does_not_touch_test_metrics():
     assert result.splits.train.size + result.splits.validation.size + result.splits.test.size == 36
     final = evaluate_held_out_test(result, dataset, "classification")
     assert "balanced_accuracy" in final
+
+
+
+def test_undefined_classification_auroc_is_explicitly_null_and_json_safe():
+    metrics = classification_metrics(
+        np.asarray([1, 1, 1]),
+        np.asarray([1, 1, 1]),
+        np.asarray([0.8, 0.9, 0.7]),
+    )
+    assert metrics["auroc"] is None
+    import json
+
+    assert '"auroc": null' in json.dumps(metrics, sort_keys=True, allow_nan=False)
+
+
+def test_undefined_regression_r2_is_explicitly_null_and_json_safe():
+    metrics = regression_metrics(
+        np.asarray([2.0]),
+        np.asarray([2.0]),
+    )
+    assert metrics["r2"] is None
+    import json
+
+    assert '"r2": null' in json.dumps(metrics, sort_keys=True, allow_nan=False)
