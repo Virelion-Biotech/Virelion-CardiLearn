@@ -1,0 +1,18 @@
+name: virelion-cardi-learn-sra-v1
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python=3.11
+  - curl
+  - gzip
+  - numpy>=1.26,<3
+  - pandas>=2.1,<3
+  - scikit-learn>=1.4,<2
+  - pyyaml>=6,<7
+  - requests>=2.31,<3
+  - sra-tools=3.4.1
+  - fastp=1.3.6
+  - star=2.7.11b
+  - subread=2.1.1

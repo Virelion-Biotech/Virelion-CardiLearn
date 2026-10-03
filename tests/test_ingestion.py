@@ -1,0 +1,75 @@
+from __future__ import annotations
+
+import gzip
+
+import numpy as np
+import pandas as pd
+from scipy import sparse
+from scipy.io import mmwrite
+
+from cardilearn.ingestion import (
+    SparseExpression,
+    apply_gene_map,
+    read_10x_mtx,
+    select_variable_genes_sparse,
+    validate_metadata,
+)
+
+
+def test_sparse_expression_validates_and_selects_train_only_genes():
+    X = sparse.csr_matrix(
+        np.array([[1, 0, 10], [2, 0, 20], [3, 0, 30], [100, 0, 31]], dtype=np.float32)
+    )
+    expression = SparseExpression(X, ("a", "b", "c", "d"), ("g1", "g2", "g3"))
+    selected = select_variable_genes_sparse(expression, [True, True, True, False], 1)
+    assert selected.tolist() == [2]
+
+
+def test_gene_map_is_conservative():
+    expression = SparseExpression(
+        sparse.csr_matrix(np.eye(2, dtype=np.float32)),
+        ("cell1", "cell2"),
+        ("pig_a", "pig_b"),
+    )
+    mapped = apply_gene_map(
+        expression,
+        pd.DataFrame({"source_gene": ["pig_a", "pig_b"], "target_gene": ["H1", "H2"]}),
+    )
+    assert mapped.gene_ids == ("H1", "H2")
+
+
+def test_metadata_hierarchy_rejects_conflicting_sample_parent():
+    metadata = pd.DataFrame(
+        {
+            "study_id": ["s1", "s1"],
+            "subject_id": ["a", "b"],
+            "sample_id": ["sample", "sample"],
+            "species": ["pig", "pig"],
+            "assay": ["snRNA", "snRNA"],
+            "cell_type": ["CM", "CM"],
+            "maturation": [1, 1],
+            "injury": [0, 0],
+        }
+    )
+    try:
+        validate_metadata(metadata)
+    except ValueError as exc:
+        assert "sample_id" in str(exc)
+    else:
+        raise AssertionError("conflicting sample parent mapping must be rejected")
+
+
+def test_read_10x_mtx_accepts_legacy_genes_tsv(tmp_path):
+    matrix_dir = tmp_path / "legacy_10x"
+    matrix_dir.mkdir()
+    matrix = sparse.coo_matrix(np.array([[1, 0], [0, 2]], dtype=np.int32))
+    with gzip.open(matrix_dir / "matrix.mtx.gz", "wb") as handle:
+        mmwrite(handle, matrix)
+    (matrix_dir / "barcodes.tsv").write_text("cellA\ncellB\n", encoding="utf-8")
+    (matrix_dir / "genes.tsv").write_text("geneA\nGeneB\n", encoding="utf-8")
+
+    result = read_10x_mtx(matrix_dir)
+
+    assert result.observation_ids == ("cellA", "cellB")
+    assert result.gene_ids == ("geneA", "GeneB")
+    assert result.X.toarray().tolist() == [[1.0, 0.0], [0.0, 2.0]]

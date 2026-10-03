@@ -1,0 +1,28 @@
+version: 1
+name: CardiLearn-v1.0-ablation-suite
+seed_count: 5
+freeze_split_hash: true
+same_dataset: true
+same_optimizer: true
+same_encoder_capacity: true
+ablations:
+  full:
+    reconstruction: true
+    contrastive: true
+    transition: true
+    species_adversary: true
+    metadata: true
+  no_reconstruction:
+    reconstruction: false
+  no_contrastive:
+    contrastive: false
+  no_species_adversary:
+    species_adversary: false
+  no_transition:
+    transition: false
+  no_metadata:
+    metadata: false
+  randomized_metadata:
+    metadata_shuffle: true
+  no_latent_bottleneck:
+    latent_dim: 4096

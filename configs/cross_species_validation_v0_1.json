@@ -1,0 +1,11 @@
+{
+  "version": "0.1",
+  "evaluation": {
+    "leave_one_species_out": true,
+    "freeze_encoder_before_test": true,
+    "linear_probe": true
+  },
+  "species": ["human", "mouse", "pig"],
+  "protected_test": true,
+  "future_external_species": ["zebrafish"]
+}

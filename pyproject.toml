@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "virelion-cardilearn"
+version = "0.4.2"
+description = "Reproducible machine learning for cardiac datasets."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy>=1.26,<3",
+  "pandas>=2.1,<3",
+  "scikit-learn>=1.4,<2",
+  "joblib>=1.3,<2",
+  "scipy>=1.12,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8,<9",
+  "ruff>=0.6,<1",
+]
+torch = ["torch>=2.2,<3", "pyarrow>=14,<22"]
+bio = ["anndata>=0.10,<1", "scanpy>=1.10,<2", "mudata>=0.2,<1", "zarr>=2.17,<3"]
+infra = ["hydra-core>=1.3,<2"]
+retrieval = ["faiss-cpu>=1.8,<2"]
+bench = ["pyyaml>=6,<7"]
+
+[project.scripts]
+cardilearn = "cardilearn.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["cardilearn*"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

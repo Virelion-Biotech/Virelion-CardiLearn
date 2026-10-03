@@ -1,0 +1,96 @@
+{
+  "schema_version": "1.0",
+  "artifact": "configs/sra_reprocessing_v1.json",
+  "purpose": "Reproducible raw-read rescue for the four locked benchmark cohorts whose GEO processed matrices fail the raw integer-count contract.",
+  "manifest": "data/manifest.lock.json",
+  "accessions": [
+    "GSE232259",
+    "GSE52313",
+    "GSE186875",
+    "GSE308783"
+  ],
+  "reference": {
+    "assembly": "GRCm39",
+    "species": "Mus musculus",
+    "ensembl_release": 112,
+    "fasta_gz": "https://ftp.ensembl.org/pub/release-112/fasta/mus_musculus/dna/Mus_musculus.GRCm39.dna.primary_assembly.fa.gz",
+    "gtf_gz": "https://ftp.ensembl.org/pub/release-112/gtf/mus_musculus/Mus_musculus.GRCm39.112.gtf.gz",
+    "fasta_sha256": null,
+    "gtf_sha256": null,
+    "sjdb_overhang": 99
+  },
+  "tools": {
+    "sra_toolkit": "3.4.1",
+    "fastp": "1.3.6",
+    "star": "2.7.11b",
+    "subread": "2.1.1"
+  },
+  "retrieval": {
+    "primary_source": "ENA_generated_fastq_for_exact_SRR",
+    "fallback_source": "SRA_prefetch_and_fasterq_dump",
+    "resume_downloads": true,
+    "verify_fastq_md5": true,
+    "fail_on_missing_md5": false
+  },
+  "qc": {
+    "engine": "fastp",
+    "preserve_raw_reads_by_default": true,
+    "trim_and_filter": false,
+    "minimum_read_length": 20,
+    "quality_cutoff": 20
+  },
+  "alignment": {
+    "aligner": "STAR",
+    "twopass_mode": "Basic",
+    "out_sam_type": "BAM SortedByCoordinate",
+    "genome_load": "NoSharedMemory",
+    "out_filter_multimap_nmax": 20,
+    "quant_mode": null
+  },
+  "counting": {
+    "engine": "featureCounts",
+    "feature_type": "exon",
+    "gene_id_attribute": "gene_id",
+    "strand": 0,
+    "paired_end": "auto",
+    "count_read_pairs": true,
+    "multimapping": "exclude",
+    "fractional": false
+  },
+  "resources": {
+    "threads_default": 8,
+    "star_index_threads": 8,
+    "recommended_ram_gb": 64,
+    "recommended_disk_gb": 500,
+    "note": "STAR mammalian genome indexing and alignment are the dominant resource requirements. T4 GPU acceleration is not used by this pipeline."
+  },
+  "outputs": {
+    "work_dir": "step3_reprocessed",
+    "run_manifest": "metadata/locked_run_manifest.tsv",
+    "run_manifest_json": "metadata/locked_run_manifest.json",
+    "reference_fingerprint": "reference/reference_fingerprint.json",
+    "source_registry": "external_count_sources.json",
+    "merged_matrix_pattern": "matrices/{accession}.raw_counts.tsv.gz",
+    "validation_report_pattern": "validation/{accession}.json"
+  },
+  "promotion_policy": {
+    "allowed_source_type": "sra_reprocessed_raw_counts",
+    "required_provenance": [
+      "locked_manifest_sha256",
+      "config_sha256",
+      "reference_fingerprint",
+      "run_manifest_sha256",
+      "all_run_accessions",
+      "all_input_fastq_checksums",
+      "all_count_matrix_sha256"
+    ],
+    "strict_count_contract": {
+      "integer_like": true,
+      "nonnegative": true,
+      "duplicate_gene_ids": false,
+      "duplicate_sample_ids": false,
+      "all_locked_samples_present": true,
+      "unexpected_samples": false
+    }
+  }
+}

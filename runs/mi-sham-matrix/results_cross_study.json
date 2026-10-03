@@ -1,0 +1,98 @@
+[
+  {
+    "train_study": "GSE153485",
+    "test_study": "GSE236374",
+    "model": "logistic_regression",
+    "n_train": 20,
+    "n_test": 9,
+    "n_shared_genes": 20529,
+    "n_hvg": 2000,
+    "metrics": {
+      "accuracy": 1.0,
+      "balanced_accuracy": 1.0,
+      "f1_macro": 1.0,
+      "auroc": 1.0,
+      "auprc": 1.0
+    }
+  },
+  {
+    "train_study": "GSE153485",
+    "test_study": "GSE236374",
+    "model": "hist_gradient_boosting",
+    "n_train": 20,
+    "n_test": 9,
+    "n_shared_genes": 20529,
+    "n_hvg": 2000,
+    "metrics": {
+      "accuracy": 0.3333333333333333,
+      "balanced_accuracy": 0.5,
+      "f1_macro": 0.25,
+      "auroc": 0.5,
+      "auprc": 0.6666666666666666
+    }
+  },
+  {
+    "train_study": "GSE236374",
+    "test_study": "GSE153485",
+    "model": "logistic_regression",
+    "n_train": 9,
+    "n_test": 20,
+    "n_shared_genes": 20529,
+    "n_hvg": 2000,
+    "metrics": {
+      "accuracy": 0.5,
+      "balanced_accuracy": 0.5,
+      "f1_macro": 0.3333333333333333,
+      "auroc": 0.85,
+      "auprc": 0.8708180708180707
+    }
+  },
+  {
+    "train_study": "GSE236374",
+    "test_study": "GSE153485",
+    "model": "hist_gradient_boosting",
+    "n_train": 9,
+    "n_test": 20,
+    "n_shared_genes": 20529,
+    "n_hvg": 2000,
+    "metrics": {
+      "accuracy": 0.5,
+      "balanced_accuracy": 0.5,
+      "f1_macro": 0.3333333333333333,
+      "auroc": 0.5,
+      "auprc": 0.5
+    }
+  },
+  {
+    "train_study": "GSE153485",
+    "test_study": "GSE153485_heldout",
+    "model": "logistic_regression",
+    "n_train": 14,
+    "n_test": 6,
+    "n_shared_genes": 20529,
+    "n_hvg": 2000,
+    "metrics": {
+      "accuracy": 1.0,
+      "balanced_accuracy": 1.0,
+      "f1_macro": 1.0,
+      "auroc": 1.0,
+      "auprc": 1.0
+    }
+  },
+  {
+    "train_study": "GSE153485",
+    "test_study": "GSE153485_heldout",
+    "model": "hist_gradient_boosting",
+    "n_train": 14,
+    "n_test": 6,
+    "n_shared_genes": 20529,
+    "n_hvg": 2000,
+    "metrics": {
+      "accuracy": 0.5,
+      "balanced_accuracy": 0.5,
+      "f1_macro": 0.3333333333333333,
+      "auroc": 0.5,
+      "auprc": 0.5
+    }
+  }
+]

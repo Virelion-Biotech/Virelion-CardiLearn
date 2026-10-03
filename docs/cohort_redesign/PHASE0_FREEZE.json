@@ -1,0 +1,44 @@
+{
+  "document": "cohort_redesign_phase0_freeze",
+  "created_utc": "2026-09-06T11:50:00Z",
+  "status": "FROZEN",
+  "principle": "Do not modify existing lock claims for the prior four-dataset set. Record removals explicitly. Do not delete prior evidence.",
+  "removed_blocked": [
+    {
+      "accession": "GSE130699",
+      "status": "REMOVED / BLOCKED",
+      "reason": "pooled animals; individual subject IDs unavailable from public GEO metadata",
+      "prior_lock_status": "blocked_missing_subject_mapping"
+    },
+    {
+      "accession": "GSE153480",
+      "status": "REMOVED / BLOCKED",
+      "reason": "pooled animals; individual subject IDs unavailable from public GEO metadata",
+      "prior_lock_status": "blocked_missing_subject_mapping",
+      "prior_artifacts_retained": [
+        "data/manifests/GSE153480.json",
+        "docs/dataset_reviews/GSE153480_REVIEW.md"
+      ]
+    }
+  ],
+  "retained_candidates": [
+    {
+      "accession": "GSE185289",
+      "status": "RETAINED_FOR_RECONCILIATION",
+      "note": "Porcine apical-resection model; GSM titles expose heart IDs; subject mapping still required before lock"
+    },
+    {
+      "accession": "GSE217494",
+      "status": "DEFERRED_TO_EXTERNAL_HUMAN_LAYER",
+      "note": "Human CITE-seq; not required for initial regeneration discovery cohort"
+    }
+  ],
+  "new_core_cohort_plan": [
+    "GSE115665 (pig neonatal MI regeneration) — Job 1",
+    "GSE185289 (pig AR+MI) — Job 2",
+    "GSE227189 (mouse MI time course) — Job 3",
+    "GSE227190 (zebrafish cryoinjury) — Job 4"
+  ],
+  "schema_note": "experimental_unit_type required on every row (individual_animal | individual_heart | pooled_animals | donor | library | technical_replicate). mapping_status must be resolved or blocked; never guessed.",
+  "next": "Job 1 GSE115665 reconciliation only; do not produce manifest.lock.json until Jobs 1-4 pass audit"
+}

@@ -1,0 +1,3 @@
+model,n_train,n_test,accuracy,balanced_accuracy,f1_macro,auroc,auprc
+logistic_regression,21,9,1.0,1.0,1.0,1.0,1.0
+hist_gradient_boosting,21,9,0.7777777777777778,0.5,0.4375,0.5,0.7777777777777778

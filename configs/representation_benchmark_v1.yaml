@@ -1,0 +1,47 @@
+benchmark:
+  id: cardilearn_representation_v1
+  task: representation
+  primary_metric: auroc
+  models:
+    - pca
+    - autoencoder
+    - scvi
+    - geneformer
+    - scgpt
+    - uce
+    - nicheformer
+    - scimilarity
+    - cardilearn_research
+  seeds: [13, 42, 73, 101, 131]
+  evaluation_unit: biological_group
+  biological_group_column: sample_id
+  selection_split: validation
+  report_split: test
+  require_locked_test: true
+  require_grouped_split: true
+  external_study_required: true
+  cross_species_required: true
+
+implementation:
+  frozen_embeddings: true
+  external_models:
+    loading_policy: caller_supplied
+    unavailable_policy: report_unavailable
+  primary_probe:
+    type: logistic_regression
+    standardize_fit_on_training_only: true
+  aggregation:
+    method: mean
+    before_primary_inference: true
+
+claims:
+  allowed:
+    - held_out_predictive_performance
+    - cross_study_transfer
+    - cross_species_transfer
+    - representation_robustness_across_seeds
+  forbidden_without_additional_evidence:
+    - causal_mechanism
+    - regenerative_efficacy
+    - clinical_utility
+    - universal_superiority

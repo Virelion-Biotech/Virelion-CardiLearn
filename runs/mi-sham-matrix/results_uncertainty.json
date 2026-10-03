@@ -1,0 +1,20 @@
+{
+  "direction": "GSE153485_train -> GSE236374_test",
+  "model": "logistic_regression",
+  "n_hvg": 2000,
+  "n_shared_genes": 20529,
+  "observed_auroc": 1.0,
+  "observed_balanced_accuracy": 1.0,
+  "permutation": {
+    "n_perm": 200,
+    "null_mean_auroc": 0.47055555555555556,
+    "null_std_auroc": 0.4461394760596347,
+    "p_value_one_sided": 0.3582089552238806
+  },
+  "bootstrap_test": {
+    "n_boot_valid": 483,
+    "auroc_ci95": [1.0, 1.0],
+    "auroc_mean": 1.0
+  },
+  "timestamp_utc": "2026-08-30T17:26:21.728516+00:00"
+}

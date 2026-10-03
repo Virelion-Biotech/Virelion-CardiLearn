@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0",
+  "purpose": "Explicitly declare processed GEO supplementary files for local acquisition.",
+  "files": [
+    {
+      "accession": "GSM_ACCESSION",
+      "url": "https://ftp.ncbi.nlm.nih.gov/geo/samples/...",
+      "relative_path": "GSM_ACCESSION/matrix.mtx.gz",
+      "sha256": ""
+    }
+  ],
+  "notes": "Populate only from the authoritative NCBI GEO sample record. Do not place downloaded expression files in Git. The downloader rejects path traversal and records SHA256 provenance."
+}

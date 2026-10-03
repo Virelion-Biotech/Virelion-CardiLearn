@@ -1,0 +1,45 @@
+version: "1.0"
+validated_at: "2026-08-19"
+datasets:
+  - accession: "GSE153480"
+    organism: "Mus musculus"
+    modality: "scRNA-seq"
+    samples: 8
+    sample_ids:
+      - GSM4644949
+      - GSM4644950
+      - GSM4644951
+      - GSM4644952
+      - GSM4644953
+      - GSM4644954
+      - GSM4644955
+      - GSM4644956
+    conditions: ["MI", "sham"]
+    metadata_axes: ["age_or_stage", "timepoint", "injury"]
+    source_url: "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE153480"
+    raw_resource: "GSE153480_RAW.tar"
+    feature_input_contract: "prepared/sample_features.csv"
+    biological_group_contract: "one animal/biological replicate per group"
+  - accession: "GSE216211"
+    organism: "Mus musculus"
+    modality: "scRNA-seq"
+    samples: 3
+    sample_ids:
+      - GSM6661562
+      - GSM6661563
+      - GSM6661564
+    conditions: ["sham", "MI", "MI-E"]
+    primary_conditions_for_mi_sham: ["sham", "MI"]
+    excluded_conditions: ["MI-E"]
+    metadata_axes: ["injury", "cell_context"]
+    source_url: "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE216211"
+    raw_resource: "GSE216211_RAW.tar"
+    feature_input_contract: "prepared/sample_features.csv"
+    biological_group_contract: "one animal/biological replicate per group"
+
+materialization_policy:
+  - "Repository contains metadata and acquisition instructions, never source expression matrices."
+  - "Downloaded resources are cached locally and fingerprinted."
+  - "Source labels must be resolved from GEO/SRA metadata before feature generation."
+  - "Cell-level rows must inherit a biological_group_id from their source sample/animal."
+  - "Technical replicates remain inside the same biological group."
