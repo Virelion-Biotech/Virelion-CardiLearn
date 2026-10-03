@@ -1,0 +1,1490 @@
+from __future__ import annotations
+
+import ast
+import gzip
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tarfile
+import zipfile
+from collections import Counter
+from pathlib import Path
+from typing import NoReturn
+from urllib.parse import unquote, urljoin, urlparse
+
+import numpy as np
+import pandas as pd
+import requests
+import yaml
+
+
+class Step3Halt(RuntimeError):
+    pass
+
+
+COMMIT = "e57b810a2680a1c8fdd7ea6b64ee782f0d744a43"
+MANIFEST_SHA = "614807b68606ef6248913becd90c9b45240401f6a3a8c511c03dde41846555c1"
+BENCHMARK_SHA = "971202aa93b482f167cab376ea1a3f5ee1609137b5269a1f6a546ae357e32c3e"
+REPO_URL = "https://github.com/Virelion-Biotech/Virelion-CardiLearn.git"
+WORK = Path("/content/CardiLearn_step3_work")
+REPO = WORK / "repo"
+SRC = WORK / "sources"
+EXT = WORK / "extracted"
+CACHE = WORK / "_pycache"
+REPORT = REPO / "reports" / "baselines_v1.json"
+AUDIT = WORK / "source_audits"
+ACCESSIONS = ["GSE183272", "GSE236374", "GSE232259", "GSE52313", "GSE186875", "GSE308783"]
+TRAIN = {"GSE183272", "GSE232259", "GSE52313", "GSE186875"}
+VALIDATION = {"GSE236374"}
+TEST = {"GSE308783"}
+SEED = 42
+N_GENES = 5000
+N_BOOT = 2000
+N_PERM = 1000
+TIMEOUT = (20, 120)
+MAX_BYTES = 2_000_000_000
+GEO_FTP = "https://ftp.ncbi.nlm.nih.gov/geo"
+
+GSM_RE = re.compile(r"(?<![A-Za-z0-9])(GSM\d+)(?!\d)", re.I)
+ENS_RE = re.compile(r"^ENSMUSG\d+$", re.I)
+MI_RE = re.compile(r"(?<![A-Za-z0-9])(?:mi\d*|m[.\s_-]*i|myocardial infarction|infarct)(?![A-Za-z0-9])", re.I)
+SHAM_RE = re.compile(r"(?<![A-Za-z0-9])sham(?![A-Za-z0-9])|sham[-_ ]?operated|vehicle\s+control", re.I)
+FORBIDDEN_RE = re.compile(r"(?<![A-Za-z0-9])(?:fpkm|tpm|cpm|rpkm|normalized|normalised|log2|log1p)(?![A-Za-z0-9])", re.I)
+COUNT_RE = re.compile(r"^(?:count|counts|genecount|gene_count|readcount|read_count)$", re.I)
+COUNTISH_RE = re.compile(r"(?<![A-Za-z0-9])(?:read_?counts?|raw_?counts?|counts?|reads)(?![A-Za-z0-9])", re.I)
+
+# Explicit, human-approved sample-column mappings for count matrices whose column
+# headers cannot be tied to GEO metadata automatically. Fill ONLY from the
+# candidate audit (it prints the matrix headers next to the GEO titles/descriptions):
+#     COLUMN_OVERRIDES = {"GSE236374": {"GSM0000001": "<matrix column header>", ...}}
+# Every manifest GSM of that accession must be listed. An override is used only if
+# all listed columns exist in the candidate file, and it is recorded in provenance.
+COLUMN_OVERRIDES: dict[str, dict[str, str]] = {}
+
+# Accessions whose GEO supplementary files do NOT contain raw integer counts (GSE52313,
+# GSE186875, GSE232259, GSE308783 at the time of writing: only FPKM/TPM/normalized/estimated
+# values) can be supplied with a human-approved raw-count matrix, e.g. produced by
+# re-processing the SRA reads. The file still has to pass every count-scale / sample /
+# gene-identifier check below; nothing is substituted or rounded automatically.
+#     EXTERNAL_COUNT_SOURCES = {"GSE308783": {"source": "<https URL or local path>", "sha256": "<64 hex>"}}
+# The sha256 is mandatory and is recorded in the report provenance.
+EXTERNAL_COUNT_SOURCES: dict[str, dict[str, str]] = {}
+
+
+def load_external_count_sources() -> None:
+    """Merge external_count_sources.json (written by step3_sra_reprocess.py) if present.
+    Path: $STEP3_EXTERNAL_SOURCES, else /content/step3_reprocessed/external_count_sources.json."""
+    path = Path(os.environ.get("STEP3_EXTERNAL_SOURCES", "/content/step3_reprocessed/external_count_sources.json"))
+    if not path.is_file():
+        return
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for acc, entry in data.items():
+        if not re.fullmatch(r"GSE\d+", acc) or not entry.get("source") or not re.fullmatch(r"[0-9a-fA-F]{64}", str(entry.get("sha256", ""))):
+            raise ValueError(f"invalid entry for {acc!r} in {path}: needs 'source' and a 64-hex 'sha256'")
+        EXTERNAL_COUNT_SOURCES[acc] = entry
+    print(f"EXTERNAL COUNT SOURCES loaded from {path}: {sorted(data)}")
+
+
+load_external_count_sources()
+
+GENE_HEADER_RE = re.compile(r"^(?:gene[\s_.-]*)?(?:id|ids|symbol|symbols|name)$|^gene$|^genesymbol$", re.I)
+
+# Decorations that aligners / featureCounts append to sample names in matrix headers.
+PIPELINE_TAILS = (
+    ".bam", ".sam", ".cram", "aligned.sortedbycoord.out", "aligned.out", ".sorted", "_sorted",
+    ".featurecounts", "_featurecounts", "_feature_counts", "_readcounts", "_read_counts",
+    "_rawcounts", "_raw_counts", ".counts", "_counts", ".count", "_count", "_raw",
+    ".txt", ".tsv", ".csv",
+)
+# Some GEO matrices are keyed by gene symbol (GSE236374: header "Genesymbol"), but the
+# benchmark gene universe is Ensembl stable IDs (ENSMUSG...). Symbols are mapped 1:1 through
+# this pinned Ensembl GTF; the file hash and the mapped / unmapped / ambiguous counts are
+# written to the report provenance. Set to None to disable the mapping (the run then halts).
+ENSEMBL_GTF_URL = "https://ftp.ensembl.org/pub/release-112/gtf/mus_musculus/Mus_musculus.GRCm39.112.gtf.gz"
+GTF_GENE_ID_RE = re.compile(r'gene_id "([^"]+)"')
+GTF_GENE_NAME_RE = re.compile(r'gene_name "([^"]+)"')
+_SYMBOL_MAP_CACHE: dict[str, object] = {}
+
+TIME_TOKENS = {"day": "d", "days": "d", "dpi": "d"}
+REP_TOKENS = {"rep", "replicate", "r"}
+
+
+def halt(message: str) -> NoReturn:
+    raise Step3Halt(message)
+
+
+def sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def run_checked(cmd: list[str], cwd: Path | None = None, env: dict[str, str] | None = None) -> str:
+    e = os.environ.copy()
+    if env:
+        e.update(env)
+    e["PYTHONDONTWRITEBYTECODE"] = "1"
+    e["PYTHONPYCACHEPREFIX"] = str(CACHE)
+    p = subprocess.run(cmd, cwd=str(cwd) if cwd else None, env=e, text=True,
+                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if p.returncode:
+        halt(f"Subprocess failure.\nCommand: {' '.join(cmd)}\nExit code: {p.returncode}\nOutput:\n{p.stdout}")
+    return p.stdout
+
+
+def download(url: str, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not url.startswith(("http://", "https://")):  # approved local file (EXTERNAL_COUNT_SOURCES)
+        local_src = Path(url)
+        if not local_src.is_file():
+            halt(f"Local count source not found: {url}")
+        shutil.copyfile(local_src, path)
+        return
+    try:
+        with requests.get(url, timeout=TIMEOUT, stream=True, allow_redirects=True) as r:
+            r.raise_for_status()
+            length = r.headers.get("Content-Length")
+            if length and int(length) > MAX_BYTES:
+                halt(f"External source exceeds safety limit.\nURL: {url}\nContent-Length: {length}")
+            total = 0
+            with path.open("wb") as out:
+                for chunk in r.iter_content(1024 * 1024):
+                    if chunk:
+                        total += len(chunk)
+                        if total > MAX_BYTES:
+                            halt(f"External source exceeded safety limit.\nURL: {url}")
+                        out.write(chunk)
+    except Step3Halt:
+        raise
+    except Exception as exc:
+        halt(f"External data access failure.\nURL: {url}\nError: {type(exc).__name__}: {exc}")
+
+
+def series_root(acc: str) -> str:
+    n = int(acc[3:])
+    return f"{GEO_FTP}/series/GSE{n // 1000}nnn/{acc}/"
+
+
+def family_soft_url(acc: str) -> str:
+    return f"{series_root(acc)}soft/{acc}_family.soft.gz"
+
+
+def parse_soft(text: str) -> list[dict[str, object]]:
+    blocks: list[list[str]] = []
+    current: list[str] = []
+    for line in text.splitlines():
+        if line.startswith("^SAMPLE = "):
+            if current:
+                blocks.append(current)
+            current = [line]
+        elif current:
+            current.append(line)
+    if current:
+        blocks.append(current)
+
+    records = []
+    for block in blocks:
+        if "=" not in block[0]:
+            halt(f"Malformed GEO SAMPLE header: {block[0]}")
+        rec: dict[str, object] = {"geo_accession": block[0].split("=", 1)[1].strip()}
+        for line in block[1:]:
+            if not line.startswith("!Sample_") or " = " not in line:
+                continue
+            key, value = line.split(" = ", 1)
+            key = key[len("!Sample_"):]
+            if re.fullmatch(r"supplementary_file_\d+", key):
+                key = "supplementary_file"  # GEO numbers repeated supplementary_file lines
+            value = value.strip().replace('\\"', '"')
+            if key in {"characteristics_ch1", "supplementary_file", "relation", "data_processing", "description"}:
+                rec.setdefault(key, []).append(value)
+            elif key not in rec:
+                rec[key] = value
+        records.append(rec)
+    return records
+
+
+def _text(rec: dict[str, object], key: str) -> str:
+    value = rec.get(key, [])
+    if isinstance(value, list):
+        return " | ".join(str(x) for x in value).lower()
+    return str(value).lower()
+
+
+def classify_condition(rec: dict[str, object]) -> str | None:
+    for value in (_text(rec, "characteristics_ch1"), _text(rec, "title"), _text(rec, "source_name_ch1")):
+        if not value:
+            continue
+        mi = bool(MI_RE.search(value))
+        sham = bool(SHAM_RE.search(value))
+        if mi and sham:
+            continue
+        if mi:
+            return "MI"
+        if sham:
+            return "sham"
+    return None
+
+
+def normalized_sample_label(value: str) -> str:
+    value = str(value).strip().lower()
+    value = re.sub(r"\.(?:txt|tsv|csv|tab|gz|bam|sam)$", "", value)
+    value = value.replace("myocardial infarction", "mi")
+    value = value.replace("sham-operated", "sham")
+    value = re.sub(r"\b(?:reanalysis|sample|library|heart|left ventrical|left ventricle)\b", " ", value)
+    value = re.sub(r"\b(\d+)\s*days?\b", r"\1d", value)
+    value = re.sub(r"\b(\d+)\s*day\b", r"\1d", value)
+    value = re.sub(r"\bmi\s*(\d+)\s*d\b", r"mi \1d", value)
+    value = re.sub(r"[^a-z0-9]+", " ", value)
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def strip_pipeline_decorations(value: object) -> str:
+    """Drop directories and aligner/featureCounts suffixes from a matrix header."""
+    text = re.split(r"[\\/]", str(value).strip())[-1].lower()
+    changed = True
+    while changed:
+        changed = False
+        for tail in PIPELINE_TAILS:
+            if text.endswith(tail) and len(text) > len(tail):
+                text = text[: -len(tail)]
+                changed = True
+    return text
+
+
+def label_keys(value: object) -> set[str]:
+    """Comparable keys for one sample label.
+
+    Case/punctuation-insensitive, tokenised on letter/digit boundaries so that
+    'MI7d1' == 'MI_7d_1' == 'MI 7 days 1', with pipeline decorations stripped and
+    the word 'rep' optional ('MI_7d_rep1' == 'MI_7d_1').
+    """
+    keys: set[str] = set()
+    for raw in {str(value), strip_pipeline_decorations(value)}:
+        norm = normalized_sample_label(raw)
+        toks = [TIME_TOKENS.get(t, t) for t in re.findall(r"[a-z]+|[0-9]+", norm)]
+        if not toks:
+            continue
+        keys.add(" ".join(toks))
+        bare = [t for t in toks if t not in REP_TOKENS]
+        if bare:
+            keys.add(" ".join(bare))
+    return keys
+
+
+def sample_label_tiers(rec: dict[str, object]) -> tuple[set[str], set[str], set[str]]:
+    """(exact, derived, secondary) label keys for one GEO sample record.
+
+    exact:     GSM id and the GEO title, normalised (ambiguity is a hard error)
+    derived:   tokenised title plus a condition/time/replicate reconstruction
+    secondary: GEO description, source name and characteristic values
+               (only used when they identify exactly one manifest sample)
+    """
+    gsm = str(rec["geo_accession"]).upper()
+    title = str(rec.get("title", "")).strip()
+    exact = {normalized_sample_label(gsm), normalized_sample_label(title)}
+
+    derived = set(label_keys(title))
+    low = title.lower()
+    condition = "mi" if MI_RE.search(title) else "sham" if SHAM_RE.search(title) else None
+    rep_match = re.search(r"(?<![a-z0-9])rep(?:licate)?[\s._-]*([0-9]+)(?![0-9])", low)
+    time_match = re.search(r"(?<![a-z0-9])([0-9]+)[\s._-]*d(?:ays?)?(?![a-z0-9])", low)
+    if condition and (rep_match or time_match):
+        for rep_label in ([f"rep{rep_match.group(1)}", rep_match.group(1)] if rep_match else [None]):
+            parts = [condition]
+            if time_match:
+                parts.append(f"{time_match.group(1)}d")
+            if rep_label:
+                parts.append(rep_label)
+            derived |= label_keys(" ".join(parts))
+
+    labels: list[str] = []
+    for key in ("description", "source_name_ch1"):
+        value = rec.get(key, [])
+        labels += [str(x) for x in value] if isinstance(value, list) else [str(value)]
+    for char in rec.get("characteristics_ch1", []) or []:
+        char = str(char)
+        labels.append(char.split(":", 1)[1].strip() if ":" in char else char)
+    secondary: set[str] = set()
+    for label in labels:
+        secondary |= label_keys(label)
+
+    return {x for x in exact if x}, derived, secondary
+
+
+def sample_column_aliases(rec: dict[str, object]) -> set[str]:
+    exact, derived, _ = sample_label_tiers(rec)
+    return exact | derived
+
+
+def describe_label_mismatch(
+    columns: list[str],
+    sample_records: list[dict[str, object]],
+    limit: int = 40,
+    excluded: list[str] | None = None,
+) -> str:
+    """Human-readable dump of matrix headers next to GEO labels, for the audit trail."""
+    cols = [str(c) for c in columns]
+    shown = cols[:limit] + ([f"... (+{len(cols) - limit} more)"] if len(cols) > limit else [])
+    labels = [
+        {
+            "gsm": str(r["geo_accession"]),
+            "title": r.get("title", ""),
+            "description": r.get("description", ""),
+            "source_name": r.get("source_name_ch1", ""),
+            "characteristics": r.get("characteristics_ch1", ""),
+        }
+        for r in sample_records
+    ]
+    note = ""
+    if excluded:
+        note = (
+            f"ignored {len(excluded)} normalized-scale columns (TPM/FPKM/CPM/...): "
+            f"{json.dumps([str(c) for c in excluded[:limit]])}; "
+        )
+    return (
+        note
+        + f"matrix headers considered (after the gene column): {json.dumps(shown)}; "
+        + f"GEO labels: {json.dumps(labels)}"
+    )
+
+
+def tokens_contain(seq: list[str], sub: list[str]) -> bool:
+    """True if `sub` occurs as a contiguous run inside `seq`."""
+    n = len(sub)
+    return n > 0 and any(seq[i:i + n] == sub for i in range(len(seq) - n + 1))
+
+
+def resolve_matrix_sample_columns(
+    columns: list[str],
+    sample_records: list[dict[str, object]],
+) -> dict[str, str]:
+    by_gsm = {str(rec["geo_accession"]).upper(): rec for rec in sample_records}
+
+    exact_map: dict[str, set[str]] = {}
+    derived_map: dict[str, set[str]] = {}
+    secondary_map: dict[str, set[str]] = {}
+    for gsm, rec in by_gsm.items():
+        exact, derived, secondary = sample_label_tiers(rec)
+        for table, keys in ((exact_map, exact), (derived_map, derived), (secondary_map, secondary)):
+            for key in keys:
+                table.setdefault(key, set()).add(gsm)
+
+    title_tokens = {
+        gsm: [k.split() for k in label_keys(rec.get("title", ""))]
+        for gsm, rec in by_gsm.items()
+    }
+
+    candidates: dict[str, list[str]] = {}
+
+    def claim(gsm: str, column: str) -> None:
+        if column not in candidates.setdefault(gsm, []):
+            candidates[gsm].append(column)
+
+    for column in columns:
+        text = str(column).strip()
+
+        # 1) explicit GSM id in the header
+        gsm_hits = sorted({g.upper() for g in GSM_RE.findall(text) if g.upper() in by_gsm})
+        if gsm_hits:
+            if len(gsm_hits) != 1:
+                raise ValueError(f"ambiguous GSM mapping for matrix column {column!r}: {gsm_hits}")
+            claim(gsm_hits[0], column)
+            continue
+
+        # 2) header equals a GEO title (ambiguity is an error)
+        matches = sorted(exact_map.get(normalized_sample_label(text), set()))
+        if len(matches) == 1:
+            claim(matches[0], column)
+            continue
+        if len(matches) > 1:
+            raise ValueError(f"ambiguous GEO-title mapping for matrix column {column!r}: {matches}")
+
+        # 3) tokenised / reconstructed title, then 4) description / source / characteristics.
+        #    Lower tiers must identify exactly one manifest sample, otherwise they are ignored.
+        col_keys = label_keys(text)
+        placed = False
+        for table in (derived_map, secondary_map):
+            hits = {g for key in col_keys for g in table.get(key, ())}
+            if len(hits) == 1:
+                claim(next(iter(hits)), column)
+                placed = True
+                break
+        if placed:
+            continue
+
+        # 5) containment: the GEO title is a contiguous run of header tokens or vice versa
+        #    (e.g. title 'sham_1' vs header 'MI_sham_1'; a leading 'MI' prefix is ignored).
+        #    Needs >= 2 shared tokens and a single best-scoring sample.
+        col_tokens = [k.split() for k in col_keys]
+        col_tokens += [t[1:] for t in col_tokens if len(t) > 2 and t[0] == "mi"]
+        best: dict[str, int] = {}
+        for gsm, token_lists in title_tokens.items():
+            for tt in token_lists:
+                for ct in col_tokens:
+                    n = min(len(tt), len(ct))
+                    if n >= 2 and (tokens_contain(ct, tt) or tokens_contain(tt, ct)):
+                        best[gsm] = max(best.get(gsm, 0), n)
+        if best:
+            top = max(best.values())
+            winners = [g for g, v in best.items() if v == top]
+            if len(winners) == 1:
+                claim(winners[0], column)
+
+    # One sample may own several columns (e.g. Count / TPM / FPKM blocks). Normalized-scale
+    # columns are removed before this function is called; if several columns still remain,
+    # only a single count-like header may break the tie, otherwise the mapping is ambiguous.
+    resolved: dict[str, str] = {}
+    for gsm, cols in candidates.items():
+        if len(cols) > 1:
+            countish = [c for c in cols if COUNTISH_RE.search(str(c))]
+            if len(countish) != 1:
+                raise ValueError(f"multiple matrix columns map to GSM {gsm}: {cols}")
+            cols = countish
+        resolved[gsm] = cols[0]
+    return resolved
+
+
+def apply_column_overrides(
+    overrides: dict[str, str],
+    columns: list[str],
+    expected: set[str],
+) -> dict[str, str] | None:
+    """Return the explicit mapping if it is complete and present in this file, else None."""
+    mapping = {str(g).upper(): str(c) for g, c in overrides.items()}
+    if set(mapping) != expected:
+        raise ValueError(
+            f"COLUMN_OVERRIDES must list exactly the manifest GSMs; "
+            f"missing={sorted(expected - set(mapping))}; extra={sorted(set(mapping) - expected)}"
+        )
+    if len(set(mapping.values())) != len(mapping):
+        raise ValueError("COLUMN_OVERRIDES maps two GSMs to the same column")
+    if not set(mapping.values()) <= set(columns):
+        return None
+    return mapping
+
+
+def listing_urls(url: str) -> list[str]:
+    try:
+        r = requests.get(url, timeout=TIMEOUT)
+        r.raise_for_status()
+    except Exception as exc:
+        halt(f"GEO supplementary directory access failure.\nURL: {url}\nError: {type(exc).__name__}: {exc}")
+    base = urlparse(url)
+    hrefs = re.findall(r'href=["\']([^"\']+)["\']', r.text, re.I)
+    out: set[str] = set()
+    for href in hrefs:
+        href = unquote(href.strip())
+        if not href or href.startswith(("#", "?", "../", "./", "mailto:", "javascript:")):
+            continue
+        parsed = urlparse(urljoin(url, href))
+        # Only entries *inside* this directory: drops the parent-directory link,
+        # sort links, and off-site footer links (e.g. hhs.gov).
+        if parsed.scheme not in {"http", "https"} or parsed.netloc != base.netloc:
+            continue
+        if not parsed.path.startswith(base.path) or parsed.path == base.path:
+            continue
+        out.add(parsed._replace(query="", fragment="").geturl())
+    return sorted(out)
+
+
+def source_urls(acc: str, samples: list[dict[str, object]]) -> list[str]:
+    if acc in EXTERNAL_COUNT_SOURCES:
+        return [str(EXTERNAL_COUNT_SOURCES[acc]["source"])]
+    expected = {str(x["geo_accession"]).upper() for x in samples}
+    explicit: set[str] = set()
+    per_gsm: dict[str, str] = {}
+
+    for rec in samples:
+        gsm = str(rec["geo_accession"]).upper()
+        values = rec.get("supplementary_file", [])
+        if not isinstance(values, list):
+            continue
+        for value in values:
+            u = str(value).strip()
+            if u in {"", "NONE", "null", "NA"}:
+                continue
+            if u.startswith("ftp://"):
+                u = "https://" + u[6:]
+            elif not u.startswith(("http://", "https://")):
+                u = urljoin(f"{series_root(acc)}suppl/", u.lstrip("/"))
+            explicit.add(u)
+            ids = GSM_RE.findall(Path(urlparse(u).path).name)
+            if len(ids) == 1 and ids[0].upper() == gsm:
+                per_gsm[gsm] = u
+
+    if expected and expected.issubset(per_gsm):
+        return [per_gsm[g] for g in sorted(expected)]
+
+    discovered = set(explicit)
+    discovered.update(listing_urls(f"{series_root(acc)}suppl/"))
+    return sorted(discovered, key=lambda u: (-candidate_score(u), u))
+
+
+def candidate_score(url: str) -> int:
+    name = Path(urlparse(url).path).name.lower()
+    if not name or "filelist" in name:
+        return -10_000
+    score = 0
+    if GSM_RE.search(name):
+        score += 100
+    for token in ("raw", "count", "counts", "featurecount", "genecount", "readcount"):
+        if token in name:
+            score += 10
+    if FORBIDDEN_RE.search(name):
+        score -= 500
+    if name.endswith((".tar", ".tar.gz", ".tgz", ".zip")):
+        score += 2
+    return score
+
+
+ANNOTATION_RE = re.compile(r"\.(?:gtf|gff3?|bed|bedgraph|fa|fasta|fna|bam|sam|cram|vcf|bw|bigwig)(?:\.gz)?$", re.I)
+
+
+def usable_file(name: str) -> bool:
+    if ANNOTATION_RE.search(name):  # e.g. GSE52313_transcripts.gtf.gz (141 MB): never an expression table
+        return False
+    return name.lower().endswith((".txt", ".tsv", ".csv", ".tab", ".gz", ".tar", ".tar.gz", ".tgz", ".zip"))
+
+
+def safe_extract(path: Path, outdir: Path) -> list[Path]:
+    outdir.mkdir(parents=True, exist_ok=True)
+    extracted: list[Path] = []
+    lower = path.name.lower()
+    try:
+        if lower.endswith(".zip"):
+            with zipfile.ZipFile(path) as z:
+                members = z.infolist()
+                for info in members:
+                    if info.is_dir():
+                        continue
+                    target = (outdir / info.filename).resolve()
+                    if not str(target).startswith(str(outdir.resolve()) + os.sep):
+                        halt(f"Archive path traversal detected: {info.filename}")
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    with z.open(info) as src, target.open("wb") as dst:
+                        shutil.copyfileobj(src, dst, 1024 * 1024)
+                    extracted.append(target)
+        else:
+            mode = "r:gz" if lower.endswith((".tar.gz", ".tgz")) else "r:"
+            with tarfile.open(path, mode) as t:
+                for member in t.getmembers():
+                    if not member.isfile():
+                        continue
+                    target = (outdir / member.name).resolve()
+                    if not str(target).startswith(str(outdir.resolve()) + os.sep):
+                        halt(f"Archive path traversal detected: {member.name}")
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    src = t.extractfile(member)
+                    if src is None:
+                        continue
+                    with src, target.open("wb") as dst:
+                        shutil.copyfileobj(src, dst, 1024 * 1024)
+                    extracted.append(target)
+    except Step3Halt:
+        raise
+    except Exception as exc:
+        halt(f"Archive extraction failure.\nArchive: {path}\nError: {type(exc).__name__}: {exc}")
+    return extracted
+
+
+def open_text(path: Path):
+    if path.name.lower().endswith(".gz"):
+        return gzip.open(path, "rt", encoding="utf-8", errors="strict")
+    return path.open("rt", encoding="utf-8", errors="strict")
+
+
+def read_table(path: Path) -> pd.DataFrame:
+    with open_text(path) as fh:
+        preview = fh.read(16384)
+    lines = [x for x in preview.splitlines() if x.strip() and not x.lstrip().startswith("#")]
+    if not lines:
+        raise ValueError("empty text file")
+    first = lines[0]
+    separators = ["\t", ",", r"\s+"]
+    if "\t" not in first:
+        separators = [",", r"\s+", "\t"] if "," in first else [r"\s+", "\t", ","]
+    last_error = None
+    for sep in separators:
+        try:
+            with open_text(path) as fh:
+                df = pd.read_csv(fh, sep=sep, comment="#", low_memory=False)
+            if not isinstance(df.index, pd.RangeIndex):
+                # Header has one fewer field than the data rows (R write.table style):
+                # pandas promoted the gene column to the index. Restore it as column 0.
+                df = df.reset_index()
+            if df.shape[1] >= 2:
+                df.columns = [str(c).strip() for c in df.columns]
+                return df
+        except Exception as exc:
+            last_error = exc
+    raise ValueError(f"unable to parse tabular file: {last_error}")
+
+
+def count_scale_problem(series: pd.Series, name: object) -> str | None:
+    """Why a column is not raw integer counts (None when it is)."""
+    values = pd.to_numeric(series, errors="coerce").to_numpy(float)
+    n = len(values)
+    bad = int((~np.isfinite(values)).sum())
+    if bad:
+        return f"{name!r}: {bad} of {n} entries are missing/non-numeric/non-finite"
+    if (values < 0).any():
+        return f"{name!r}: contains negative values"
+    frac = values != np.rint(values)
+    if frac.any():
+        total = float(values.sum())
+        hint = " (sums to ~1e6: TPM-like)" if abs(total - 1e6) <= 2e3 else ""
+        examples = [round(float(x), 4) for x in values[frac][:3]]
+        return (
+            f"{name!r}: {int(frac.sum())} of {n} values are non-integer (e.g. {examples}); "
+            f"column sum={total:,.2f}{hint} -> normalized/estimated values, not raw integer counts"
+        )
+    return None
+
+
+def clean_gene_ids(series: pd.Series) -> pd.Series:
+    return series.astype(str).str.strip().str.strip("'\"").str.strip()
+
+
+def select_gene_column(df: pd.DataFrame) -> object:
+    """Pick the identifier column: an Ensembl-id column if any, else (when column 0 is a bare
+    numeric id such as Entrez) a symbol-named column, else column 0."""
+    first = df.columns[0]
+    others = [
+        c for c in df.columns[1:]
+        if pd.to_numeric(df[c], errors="coerce").notna().mean() < 0.5
+    ]
+    for c in [first, *others]:
+        ids = clean_gene_ids(df[c]).str.replace(r"\.\d+$", "", regex=True)
+        if len(ids) and float(ids.str.match(ENS_RE).mean()) >= 0.5:
+            return c
+    first_ids = clean_gene_ids(df[first])
+    if len(first_ids) and float(first_ids.str.fullmatch(r"\d+").mean()) >= 0.9:
+        for c in others:
+            if GENE_HEADER_RE.match(str(c).strip()):
+                ids = clean_gene_ids(df[c])
+                if float(ids.str.match(r"^[A-Za-z][A-Za-z0-9._\-()]*$").mean()) >= 0.5:
+                    return c
+    return first
+
+
+def integer_values(series: pd.Series) -> tuple[np.ndarray, bool]:
+    values = pd.to_numeric(series, errors="coerce").to_numpy(float)
+    ok = np.isfinite(values).all() and (values >= 0).all()
+    if not ok:
+        return values, False
+    return values, bool(np.isclose(values, np.rint(values), rtol=0.0, atol=0.0).all())
+
+
+def parse_count_file(
+    path: Path,
+    sample_records: list[dict[str, object]],
+    acc: str | None = None,
+) -> dict[str, pd.Series]:
+    df = read_table(path)
+    expected = [str(rec["geo_accession"]).upper() for rec in sample_records]
+    expected_upper = set(expected)
+    gene_col = select_gene_column(df)
+    all_columns = [c for c in df.columns[1:] if c != gene_col]
+    # TPM / FPKM / CPM / normalized columns can never satisfy the raw-count contract, so they
+    # are excluded up front (a sample may carry Count + TPM + FPKM blocks in one table).
+    excluded = [c for c in all_columns if FORBIDDEN_RE.search(str(c))]
+    sample_columns = [c for c in all_columns if c not in set(excluded)]
+
+    # Scale gate before any label matching: a table with numeric value columns but not a single
+    # integer-like one (FPKM / TPM / normalized / estimated counts) can never satisfy the contract.
+    numeric_cols = [c for c in sample_columns if pd.to_numeric(df[c], errors="coerce").notna().mean() >= 0.98]
+    if numeric_cols and all(count_scale_problem(df[c], c) is not None for c in numeric_cols):
+        problems = [count_scale_problem(df[c], c) for c in numeric_cols[:2]]
+        raise ValueError(
+            f"no raw integer-like count columns: all {len(numeric_cols)} numeric value columns are "
+            f"non-integer or incomplete; {' | '.join(str(p) for p in problems)}"
+            + (f"; ignored {len(excluded)} TPM/FPKM-labelled columns" if excluded else "")
+        )
+
+    # Matrix path: sample/GSM identifiers, GEO sample-title aliases, or an explicit
+    # human-approved override are present in the column names. Annotation columns
+    # (Chr/Start/End/Strand/Length) are ignored because they cannot resolve to a
+    # locked biological unit.
+    matrix_cols: dict[str, str] | None = None
+    overrides = COLUMN_OVERRIDES.get(acc or "")
+    if overrides:
+        matrix_cols = apply_column_overrides(overrides, sample_columns, expected_upper)
+    if not matrix_cols:
+        matrix_cols = resolve_matrix_sample_columns(sample_columns, sample_records)
+
+    if matrix_cols:
+        if set(matrix_cols) != expected_upper:
+            missing = sorted(expected_upper - set(matrix_cols))
+            extra = sorted(set(matrix_cols) - expected_upper)
+            raise ValueError(
+                "matrix sample mapping is incomplete or contains unexpected "
+                f"locked units; missing={missing}; extra={extra}; "
+                + describe_label_mismatch(sample_columns, sample_records, excluded=excluded)
+            )
+
+        out: dict[str, pd.Series] = {}
+        genes = clean_gene_ids(df[gene_col])
+
+        scale_problems = [p for p in (count_scale_problem(df[matrix_cols[g]], matrix_cols[g]) for g in expected) if p]
+        if scale_problems:
+            raise ValueError(
+                f"{len(scale_problems)} of {len(expected)} mapped sample columns are not raw integer-like counts: "
+                + " | ".join(scale_problems[:3])
+            )
+
+        for gsm in expected:
+            col = matrix_cols[gsm]
+            values, integer = integer_values(df[col])
+
+            if not integer:
+                raise ValueError(f"{col} is not raw integer-like counts")
+
+            series = pd.Series(values.astype(np.int64), index=genes, name=gsm)
+            series.attrs["source_column"] = str(col)
+            out[gsm] = series
+
+        return out
+
+    # Single-sample path: GSM is in filename, exactly matching one manifest unit.
+    filename_ids = [
+        x.upper()
+        for x in GSM_RE.findall(path.name)
+        if x.upper() in expected_upper
+    ]
+    if len(filename_ids) != 1:
+        raise ValueError(
+            "no unique manifest GSM in filename and no manifest GSM/title aliases in columns; "
+            + describe_label_mismatch(sample_columns, sample_records, excluded=excluded)
+        )
+
+    gsm = filename_ids[0]
+    named_count_cols = [c for c in all_columns if COUNT_RE.fullmatch(str(c).strip())]
+    if len(named_count_cols) == 0:
+        int_cols = []
+        for col in all_columns:
+            _, integer = integer_values(df[col])
+            if integer:
+                int_cols.append(col)
+        if len(int_cols) == 1:
+            named_count_cols = int_cols
+    if len(named_count_cols) != 1:
+        raise ValueError(f"could not uniquely identify count column: {list(df.columns)}")
+    values, integer = integer_values(df[named_count_cols[0]])
+    if not integer:
+        raise ValueError(
+            "single-sample count column is not raw integer-like: "
+            + str(count_scale_problem(df[named_count_cols[0]], named_count_cols[0]))
+        )
+    genes = clean_gene_ids(df[gene_col])
+    series = pd.Series(values.astype(np.int64), index=genes, name=gsm)
+    series.attrs["source_column"] = str(named_count_cols[0])
+    return {gsm: series}
+
+
+def normalize_genes(df: pd.DataFrame) -> pd.DataFrame:
+    genes = df["gene_id"].astype(str).str.strip().str.replace(r"\.\d+$", "", regex=True)
+    keep = genes.str.match(ENS_RE)
+    n = int(keep.sum())
+    if n < 100:
+        halt(f"Gene identifier gate failed: only {n} stable ENSMUSG identifiers")
+    df = df.loc[keep].copy()
+    df["gene_id"] = genes.loc[keep]
+    if df["gene_id"].duplicated().any():
+        halt("Duplicate stable mouse gene identifiers detected")
+    return df
+
+
+def ensembl_fraction(index: pd.Index) -> float:
+    ids = pd.Index(index).astype(str).str.strip().str.replace(r"\.\d+$", "", regex=True)
+    return float(ids.str.match(ENS_RE).mean()) if len(ids) else 0.0
+
+
+def load_ensembl_symbol_map() -> tuple[dict[str, str], dict[str, object]]:
+    if ENSEMBL_GTF_URL is None:
+        halt(
+            "Count matrix is keyed by gene symbol, not Ensembl stable IDs, and "
+            "ENSEMBL_GTF_URL is disabled, so symbols cannot be mapped to ENSMUSG identifiers."
+        )
+    if "map" in _SYMBOL_MAP_CACHE:
+        return _SYMBOL_MAP_CACHE["map"], _SYMBOL_MAP_CACHE["info"]  # type: ignore[return-value]
+
+    local = SRC / "annotation" / Path(urlparse(ENSEMBL_GTF_URL).path).name
+    download(ENSEMBL_GTF_URL, local)
+    by_symbol: dict[str, set[str]] = {}
+    try:
+        with gzip.open(local, "rt", encoding="utf-8") as fh:
+            for line in fh:
+                if line.startswith("#"):
+                    continue
+                parts = line.rstrip("\n").split("\t")
+                if len(parts) < 9 or parts[2] != "gene":
+                    continue
+                gid = GTF_GENE_ID_RE.search(parts[8])
+                name = GTF_GENE_NAME_RE.search(parts[8])
+                if gid and name and ENS_RE.match(gid.group(1)):
+                    by_symbol.setdefault(name.group(1), set()).add(gid.group(1))
+    except Exception as exc:
+        halt(f"Ensembl annotation parsing failure.\nFile: {local}\nError: {type(exc).__name__}: {exc}")
+    if len(by_symbol) < 10_000:
+        halt(f"Ensembl annotation looks wrong: only {len(by_symbol)} annotated gene symbols in {local}")
+
+    symbol_map = {s: next(iter(ids)) for s, ids in by_symbol.items() if len(ids) == 1}
+    info = {
+        "annotation_url": ENSEMBL_GTF_URL,
+        "annotation_sha256": sha256_file(local),
+        "n_symbols_annotated": len(by_symbol),
+        "n_symbols_ambiguous_in_annotation": len(by_symbol) - len(symbol_map),
+    }
+    _SYMBOL_MAP_CACHE["map"], _SYMBOL_MAP_CACHE["info"] = symbol_map, info
+    return symbol_map, info
+
+
+def map_symbols_to_ensembl(parsed: dict[str, pd.Series]) -> tuple[dict[str, pd.Series], dict[str, object]]:
+    """Re-key symbol-indexed count vectors by ENSMUSG id. Strictly 1:1: symbols that are
+    missing from / ambiguous in the annotation, and ids hit by >1 input symbol, are dropped."""
+    symbol_map, info = load_ensembl_symbol_map()
+    out: dict[str, pd.Series] = {}
+    stats: dict[str, object] = {}
+    for gsm, series in parsed.items():
+        symbols = [str(x).strip() for x in series.index]
+        targets = [symbol_map.get(s) for s in symbols]
+        hits = Counter(t for t in targets if t is not None)
+        keep = np.array([t is not None and hits[t] == 1 for t in targets], dtype=bool)
+        mapped = pd.Series(
+            series.to_numpy()[keep],
+            index=pd.Index([t for t, k in zip(targets, keep) if k], name="gene_id"),
+            name=series.name,
+        )
+        mapped.attrs.update(series.attrs)
+        out[gsm] = mapped
+        if not stats:
+            stats = {
+                "n_input_symbols": len(symbols),
+                "n_unmapped_dropped": sum(t is None for t in targets),
+                "n_many_to_one_dropped": int(sum(t is not None and hits[t] > 1 for t in targets)),
+                "n_mapped": int(keep.sum()),
+            }
+    if stats and stats["n_mapped"] < 0.5 * stats["n_input_symbols"]:  # type: ignore[operator]
+        first = next(iter(parsed.values()))
+        halt(
+            "Gene identifiers could not be mapped to Ensembl: only "
+            f"{stats['n_mapped']} of {stats['n_input_symbols']} ids map through the pinned annotation. "
+            "The matrix is keyed by something other than mouse gene symbols or Ensembl stable IDs "
+            f"(first ids: {[str(x) for x in first.index[:8]]}; Entrez/RefSeq ids are not supported)."
+        )
+    return out, {"gene_id_source": "gene_symbol_mapped_to_ensembl", **info, **stats}
+
+
+def combine_series(parsed: dict[str, pd.Series], expected: list[str]) -> pd.DataFrame:
+    if {x.upper() for x in parsed} != {x.upper() for x in expected}:
+        missing = sorted({x.upper() for x in expected} - {x.upper() for x in parsed})
+        extra = sorted({x.upper() for x in parsed} - {x.upper() for x in expected})
+        halt(f"Raw-source sample coverage mismatch. Missing={missing}; Extra={extra}")
+    first = next(iter(parsed.values()))
+    if first.index.duplicated().any():
+        halt("Duplicate gene identifiers in raw source")
+    for series in parsed.values():
+        if series.index.duplicated().any() or set(series.index) != set(first.index):
+            halt("Per-sample raw count files do not contain identical gene sets")
+    matrix = pd.concat([parsed[g.upper()] for g in expected], axis=1)
+    matrix.columns = expected
+    matrix.index.name = "gene_id"
+
+    if matrix.index.name != "gene_id":
+        halt("Internal parser invariant failed: raw gene index was not named gene_id")
+
+    if list(matrix.columns) != expected:
+        halt("Internal parser invariant failed: assembled sample order differs from manifest")
+
+    normalized = normalize_genes(matrix.reset_index())
+
+    if list(normalized.columns) != ["gene_id"] + expected:
+        halt(
+            "Internal parser invariant failed: normalized matrix columns do not "
+            "match [gene_id] + manifest samples"
+        )
+
+    return normalized
+
+
+def acquire_counts(acc: str, rec: dict[str, object], samples: list[dict[str, object]]) -> tuple[pd.DataFrame, dict[str, object]]:
+    expected = list(rec["samples"])
+    urls = source_urls(acc, samples)
+    if not urls:
+        halt(f"No GEO supplementary expression sources discovered for {acc}")
+
+    parsed_samples: dict[str, pd.Series] = {}
+    audit: list[dict[str, str]] = []
+    downloaded: list[dict[str, str]] = []
+
+    for idx, url in enumerate(urls):
+        filename = Path(urlparse(url).path).name
+        if not filename or not usable_file(filename) or "filelist" in filename.lower():
+            audit.append({"url": url, "status": "skipped", "reason": "not an expression candidate"})
+            continue
+
+        local = SRC / acc / f"{idx:03d}_{filename}"
+        download(url, local)
+        downloaded.append({"url": url, "path": str(local), "sha256": sha256_file(local)})
+        external = EXTERNAL_COUNT_SOURCES.get(acc)
+        if external and downloaded[-1]["sha256"].lower() != str(external.get("sha256", "")).lower():
+            halt(
+                f"External count source for {acc} does not match its approved SHA256.\n"
+                f"Source: {url}\nExpected: {external.get('sha256', '<missing>')}\nActual:   {downloaded[-1]['sha256']}"
+            )
+
+        files = [local]
+        if local.name.lower().endswith((".tar", ".tar.gz", ".tgz", ".zip")):
+            files = safe_extract(local, EXT / acc)
+
+        for file in files:
+            if not file.is_file() or not usable_file(file.name) or "filelist" in file.name.lower():
+                continue
+            if FORBIDDEN_RE.search(file.name.lower()):
+                audit.append({"url": url, "status": "rejected", "reason": f"normalized-scale filename: {file.name}"})
+                continue
+            try:
+                parsed = parse_count_file(file, samples, acc)
+                for gsm, series in parsed.items():
+                    if gsm.upper() in parsed_samples:
+                        halt(f"Multiple independent source files map to GSM {gsm} in {acc}; mapping is ambiguous")
+                    parsed_samples[gsm.upper()] = series
+                audit.append({
+                    "url": url,
+                    "status": "accepted",
+                    "reason": file.name,
+                })
+
+                if {x.upper() for x in parsed_samples} == {x.upper() for x in expected}:
+                    gene_mapping: dict[str, object] = {"gene_id_source": "ensembl_stable_ids"}
+                    if ensembl_fraction(next(iter(parsed_samples.values())).index) < 0.5:
+                        parsed_samples, gene_mapping = map_symbols_to_ensembl(parsed_samples)
+                    matrix = combine_series(parsed_samples, expected)
+                    return matrix, {
+                        "source_contract": "raw_integer_like_counts",
+                        "accepted_source_file": str(file),
+                        "accepted_source_sha256": sha256_file(file),
+                        "sample_column_mapping": {
+                            g: str(s.attrs.get("source_column", file.name))
+                            for g, s in sorted(parsed_samples.items())
+                        },
+                        "column_overrides_used": bool(COLUMN_OVERRIDES.get(acc)),
+                        "external_count_source": EXTERNAL_COUNT_SOURCES.get(acc),
+                        "gene_id_mapping": gene_mapping,
+                        "downloaded_sources": downloaded,
+                        "candidate_audit": audit,
+                    }
+            except Step3Halt:
+                raise
+            except Exception as exc:
+                audit.append({"url": url, "status": "rejected", "reason": f"{type(exc).__name__}: {exc}"})
+
+    audit_path = AUDIT / f"{acc}.json"
+    audit_path.parent.mkdir(parents=True, exist_ok=True)
+    audit_path.write_text(json.dumps({
+        "accession": acc,
+        "expected_samples": expected,
+        "candidate_audit": audit,
+        "sra_relations": [
+            str(v)
+            for r in samples
+            for v in (r.get("relation", []) if isinstance(r.get("relation", []), list) else [])
+            if "sra" in str(v).lower()
+        ],
+    }, indent=2, sort_keys=True), encoding="utf-8")
+    halt(
+        "Raw integer-like count source contract failed.\n"
+        f"Accession: {acc}\n"
+        f"Candidate audit: {audit_path}\n"
+        + json.dumps(audit, indent=2)
+    )
+
+
+def consolidated_acquisition_message(
+    failures: dict[str, str],
+    passed: list[str],
+    train_fam: set[str],
+    val_fam: set[str],
+    test_fam: set[str],
+) -> str:
+    def role(acc: str) -> str:
+        return "train" if acc in train_fam else "validation" if acc in val_fam else "test" if acc in test_fam else "?"
+
+    lines = [
+        f"Raw integer-like count source contract failed for {len(failures)} of {len(ACCESSIONS)} accessions.",
+        f"Passed: {', '.join(passed) if passed else 'none'}",
+        "Failed:",
+    ]
+    for acc, message in failures.items():
+        audit_path = AUDIT / f"{acc}.json"
+        lines.append(f"  {acc} [{role(acc)}]  audit: {audit_path}")
+        if audit_path.exists():
+            data = json.loads(audit_path.read_text(encoding="utf-8"))
+            for c in data.get("candidate_audit", []):
+                if c.get("status") == "skipped":
+                    continue
+                name = Path(urlparse(str(c.get("url", ""))).path).name
+                lines.append(f"    - {name}: {c.get('status')}: {str(c.get('reason', ''))[:320]}")
+            if data.get("sra_relations"):
+                lines.append(f"    - SRA reads available: {data['sra_relations'][0]}")
+        else:
+            lines.append("    - " + message.splitlines()[0][:320])
+    lines.append(
+        "These studies do not publish raw integer counts in GEO supplementary files; FPKM/TPM/normalized/"
+        "estimated values are never substituted or rounded. Supply an approved raw-count matrix via "
+        "EXTERNAL_COUNT_SOURCES (mandatory SHA256), e.g. from re-processing the SRA reads, or amend the lock."
+    )
+    return "\n".join(lines)
+
+
+def metrics(y: np.ndarray, p: np.ndarray) -> dict[str, float]:
+    from sklearn.metrics import average_precision_score, balanced_accuracy_score, brier_score_loss, f1_score, roc_auc_score
+    pred = (p >= 0.5).astype(int)
+    return {
+        "auroc": float(roc_auc_score(y, p)),
+        "auprc": float(average_precision_score(y, p)),
+        "balanced_accuracy": float(balanced_accuracy_score(y, pred)),
+        "f1_macro": float(f1_score(y, pred, average="macro")),
+        "brier_score": float(brier_score_loss(y, p)),
+    }
+
+
+def ece(y: np.ndarray, p: np.ndarray, bins: int = 10) -> float:
+    edges = np.linspace(0, 1, bins + 1)
+    total = 0.0
+    for lo, hi in zip(edges[:-1], edges[1:]):
+        mask = (p >= lo) & ((p <= hi) if hi == 1 else (p < hi))
+        if mask.any():
+            total += float(mask.mean()) * abs(float(y[mask].mean()) - float(p[mask].mean()))
+    return float(total)
+
+
+def bootstrap(y: np.ndarray, p: np.ndarray) -> dict[str, object]:
+    rng = np.random.default_rng(SEED)
+    zero = np.flatnonzero(y == 0)
+    one = np.flatnonzero(y == 1)
+    store = {k: [] for k in ("auroc", "auprc", "balanced_accuracy", "f1_macro", "brier_score")}
+    for _ in range(N_BOOT):
+        idx = np.concatenate([rng.choice(zero, len(zero), replace=True), rng.choice(one, len(one), replace=True)])
+        m = metrics(y[idx], p[idx])
+        for k, v in m.items():
+            store[k].append(v)
+    obs = metrics(y, p)
+    return {
+        k: {
+            "estimate": obs[k],
+            "ci95": [float(np.quantile(v, 0.025)), float(np.quantile(v, 0.975))],
+            "n_bootstrap": N_BOOT,
+        }
+        for k, v in store.items()
+    }
+
+
+def permutation_p(y: np.ndarray, p: np.ndarray) -> float:
+    from sklearn.metrics import roc_auc_score
+    rng = np.random.default_rng(SEED)
+    observed = roc_auc_score(y, p)
+    shuffled = y.copy()
+    ge = 0
+    for _ in range(N_PERM):
+        rng.shuffle(shuffled)
+        if roc_auc_score(shuffled, p) >= observed:
+            ge += 1
+    return float((ge + 1) / (N_PERM + 1))
+
+
+def main() -> None:
+    if WORK.exists():
+        shutil.rmtree(WORK)
+    for path in (WORK, SRC, EXT, CACHE, AUDIT):
+        path.mkdir(parents=True, exist_ok=True)
+
+    os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+    os.environ["PYTHONPYCACHEPREFIX"] = str(CACHE)
+    sys.dont_write_bytecode = True
+    sys.pycache_prefix = str(CACHE)
+
+    print("=" * 80)
+    print("CARDILEARN STEP 3 — CLEAN START")
+    print("=" * 80)
+    print("Python:", sys.version.splitlines()[0])
+
+    for pkg in ("numpy", "pandas", "yaml", "sklearn", "scipy", "torch"):
+        try:
+            mod = __import__(pkg)
+            print(f"{pkg}:", getattr(mod, "__version__", "unknown"))
+        except Exception as exc:
+            print(f"{pkg}: unavailable ({type(exc).__name__}: {exc})")
+
+    try:
+        import torch
+        print("CUDA available:", bool(torch.cuda.is_available()))
+        print("CUDA device:", torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU")
+    except Exception:
+        print("CUDA available: False")
+        print("CUDA device: CPU")
+
+    if REPO.exists():
+        shutil.rmtree(REPO)
+    run_checked(["git", "clone", "--quiet", REPO_URL, str(REPO)])
+    run_checked(["git", "checkout", "--quiet", COMMIT], cwd=REPO)
+
+    head = run_checked(["git", "rev-parse", "HEAD"], cwd=REPO).strip()
+    if head != COMMIT:
+        halt(f"Repository commit mismatch: {head} != {COMMIT}")
+    if run_checked(["git", "status", "--porcelain"], cwd=REPO).strip():
+        halt("Fresh checkout is dirty")
+
+    print("\nREPOSITORY CHECKOUT")
+    print("Current HEAD:", head)
+    print("Expected HEAD:", COMMIT)
+    print("Repository commit lock: PASS")
+    print("Fresh checkout cleanliness: PASS")
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(REPO) + os.pathsep + env.get("PYTHONPATH", "")
+
+    print("\nPRE-FLIGHT REPOSITORY SCRUB")
+    for path in sorted(REPO.rglob("*.py")):
+        try:
+            ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        except SyntaxError as exc:
+            halt(f"In-memory Python syntax scrub failed.\nFile: {path}\nError: {exc}")
+    print("In-memory Python syntax scrub: PASS")
+
+    print(run_checked(
+        [sys.executable, "-B", "-c", "import cardilearn; import scripts; print('cardilearn import:', cardilearn.__version__); print('scripts import: PASS')"],
+        cwd=REPO,
+        env=env,
+    ).strip())
+
+    pytest = run_checked([sys.executable, "-B", "-m", "pytest", "-q"], cwd=REPO, env=env)
+    print(pytest)
+
+    if list(REPO.rglob("__pycache__")) or list(REPO.rglob("*.egg-info")):
+        halt("Repository generated forbidden cache/build artifacts")
+    if run_checked(["git", "status", "--porcelain"], cwd=REPO).strip():
+        halt("Pre-flight worktree is dirty")
+    print("Pre-flight worktree cleanliness: PASS")
+
+    manifest_path = REPO / "data" / "manifest.lock.json"
+    benchmark_path = REPO / "configs" / "benchmark_v1.lock.yaml"
+    manifest_sha = sha256_file(manifest_path)
+    benchmark_sha = sha256_file(benchmark_path)
+
+    print("\nLOCK ARTIFACT VERIFICATION")
+    print("Approved manifest SHA256:", MANIFEST_SHA)
+    print("Current manifest SHA256: ", manifest_sha)
+    print("Approved benchmark SHA256:", BENCHMARK_SHA)
+    print("Current benchmark SHA256: ", benchmark_sha)
+
+    if manifest_sha != MANIFEST_SHA:
+        halt("Manifest SHA256 mismatch against approved artifact")
+    if benchmark_sha != BENCHMARK_SHA:
+        halt("Benchmark SHA256 mismatch against approved artifact")
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    benchmark = yaml.safe_load(benchmark_path.read_text(encoding="utf-8"))
+
+    strict = manifest["eligible_tracks"]["strict_biological_replicate_benchmark"]
+    by_acc = {x["accession"]: x for x in strict}
+    if set(by_acc) != set(ACCESSIONS):
+        halt("Manifest strict accession membership mismatch")
+    if set(benchmark["cohort_inclusion"]["accessions"]) != set(ACCESSIONS):
+        halt("Benchmark cohort inclusion mismatch")
+
+    assignment = benchmark["frozen_split"]["assignment"]
+    train_fam = set(assignment["train"])
+    val_fam = set(assignment["validation"])
+    test_fam = set(assignment["test"])
+
+    if train_fam != TRAIN or val_fam != VALIDATION or test_fam != TEST:
+        halt("Frozen split does not match the approved benchmark")
+    if train_fam & val_fam or train_fam & test_fam or val_fam & test_fam:
+        halt("Frozen split families overlap")
+
+    print("Manifest bytes match approved artifact: PASS")
+    print("Benchmark bytes match approved artifact: PASS")
+    print("\nLOCK STRUCTURE")
+    print("Manifest strict accession membership: PASS")
+    print("Benchmark cohort inclusion membership: PASS")
+    print("Frozen split: PASS")
+
+    metadata: dict[str, list[dict[str, object]]] = {}
+    matrices: dict[str, pd.DataFrame] = {}
+    provenance: dict[str, object] = {}
+
+    print("\nGEO METADATA RECONCILIATION + RAW COUNT SOURCE AUDIT")
+
+    acquisition_failures: dict[str, str] = {}
+    for acc in ACCESSIONS:
+        rec = by_acc[acc]
+        soft_url = family_soft_url(acc)
+        soft_path = SRC / acc / f"{acc}_family.soft.gz"
+        download(soft_url, soft_path)
+        try:
+            with gzip.open(soft_path, "rt", encoding="utf-8", errors="strict") as fh:
+                all_samples = parse_soft(fh.read())
+        except Exception as exc:
+            halt(f"GEO family SOFT parsing failure for {acc}: {type(exc).__name__}: {exc}")
+
+        sample_map = {str(x["geo_accession"]): x for x in all_samples}
+        wanted = list(rec["samples"])
+        if set(wanted) - set(sample_map):
+            halt(f"GEO metadata missing manifest samples for {acc}: {sorted(set(wanted) - set(sample_map))}")
+
+        selected = [sample_map[gsm] for gsm in wanted]
+        conditions = [classify_condition(x) for x in selected]
+
+        if acc == "GSE186875":
+            checked = []
+            for gsm, condition in zip(wanted, conditions):
+                title = str(sample_map[gsm].get("title", "")).lower()
+                if "vehicle" not in title:
+                    halt(f"GSE186875 selected sample lacks explicit vehicle title evidence: {gsm}")
+                if "prednisone" in title:
+                    halt(f"GSE186875 selected sample unexpectedly contains prednisone: {gsm}")
+                if condition not in {"MI", "sham"}:
+                    halt(f"GSE186875 condition unresolved: {gsm}")
+                checked.append(condition)
+            conditions = checked
+        elif set(conditions) != {"MI", "sham"}:
+            halt(f"Condition reconciliation mismatch for {acc}: {sorted(str(c) for c in set(conditions))}")
+
+        metadata[acc] = [
+            {
+                "sample_id": gsm,
+                "injury": condition,
+                "study_family_id": acc,
+                "accession": acc,
+            }
+            for gsm, condition in zip(wanted, conditions)
+        ]
+
+        try:
+            matrix, info = acquire_counts(acc, rec, selected)
+        except Step3Halt as exc:
+            # Keep going so ONE report lists every accession that fails, not just the first.
+            acquisition_failures[acc] = str(exc)
+            print(f"{acc}: metadata={len(wanted)}; raw count source=FAIL")
+            continue
+        matrices[acc] = matrix.set_index("gene_id")[wanted]
+        provenance[acc] = {"family_soft_url": soft_url, **info}
+
+        print(f"{acc}: metadata={len(wanted)}; genes={matrix.shape[0]}; raw count source=PASS")
+
+    if acquisition_failures:
+        halt(consolidated_acquisition_message(acquisition_failures, list(matrices), train_fam, val_fam, test_fam))
+
+    meta = pd.DataFrame([x for rows in metadata.values() for x in rows]).set_index("sample_id")
+    if not meta.index.is_unique:
+        halt(f"Duplicate biological-unit ids across accessions: {sorted(meta.index[meta.index.duplicated()])}")
+
+    common = set(next(iter(matrices.values())).index)
+    for matrix in matrices.values():
+        common &= set(matrix.index)
+    common = sorted(common)
+
+    if len(common) < N_GENES:
+        halt(f"Common stable mouse gene universe too small: {len(common)} < {N_GENES}")
+
+    counts = pd.concat([matrices[acc].loc[common] for acc in ACCESSIONS], axis=1)
+    counts = counts[meta.index]
+
+    train_samples = meta.index[meta["study_family_id"].isin(train_fam)]
+    val_samples = meta.index[meta["study_family_id"].isin(val_fam)]
+    test_samples = meta.index[meta["study_family_id"].isin(test_fam)]
+
+    variance = counts[train_samples].var(axis=1, ddof=0)
+    selected_genes = variance.sort_values(ascending=False, kind="stable").head(N_GENES).index.tolist()
+    if len(selected_genes) != N_GENES:
+        halt("Training-only variable-gene selection returned incorrect size")
+
+    library_sizes = counts.loc[selected_genes].sum(axis=0)
+    if (library_sizes <= 0).any():
+        halt(f"Non-positive library size: {library_sizes[library_sizes <= 0].index.tolist()}")
+
+    log_cpm = np.log1p(counts.loc[selected_genes] / library_sizes * 1_000_000.0)
+
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.decomposition import PCA
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.neural_network import MLPClassifier
+
+    scaler = StandardScaler()
+    Xtr = scaler.fit_transform(log_cpm[train_samples].T)
+    Xva = scaler.transform(log_cpm[val_samples].T)
+    Xte = scaler.transform(log_cpm[test_samples].T)
+
+    ytr = (meta.loc[train_samples, "injury"] == "MI").astype(int).to_numpy()
+    yva = (meta.loc[val_samples, "injury"] == "MI").astype(int).to_numpy()
+    yte = (meta.loc[test_samples, "injury"] == "MI").astype(int).to_numpy()
+
+    if any(len(np.unique(y)) != 2 for y in (ytr, yva, yte)):
+        halt("At least one benchmark split is single-class")
+
+    predictions: dict[str, np.ndarray] = {}
+    models: dict[str, object] = {}
+
+    pca_n = min(32, Xtr.shape[0] - 1, Xtr.shape[1])
+    pca = PCA(n_components=pca_n, svd_solver="full", random_state=SEED).fit(Xtr)
+    pca_probe = LogisticRegression(max_iter=2000, random_state=SEED).fit(pca.transform(Xtr), ytr)
+    p = pca_probe.predict_proba(pca.transform(Xte))[:, 1]
+    predictions["pca_linear_probe"] = p.copy()
+    models["pca_linear_probe"] = {
+        "validation": metrics(yva, pca_probe.predict_proba(pca.transform(Xva))[:, 1]),
+        "test": metrics(yte, p),
+        "calibration": {"ece": ece(yte, p), "n_bins": 10},
+        "pca_components": pca_n,
+    }
+
+    mlp = MLPClassifier(
+        hidden_layer_sizes=(128,),
+        solver="adam",
+        alpha=1e-4,
+        learning_rate_init=1e-3,
+        max_iter=500,
+        random_state=SEED,
+        batch_size=min(16, len(ytr)),
+        early_stopping=False,
+    ).fit(Xtr, ytr)
+    p = mlp.predict_proba(Xte)[:, 1]
+    predictions["plain_mlp"] = p.copy()
+    models["plain_mlp"] = {
+        "validation": metrics(yva, mlp.predict_proba(Xva)[:, 1]),
+        "test": metrics(yte, p),
+        "calibration": {"ece": ece(yte, p), "n_bins": 10},
+        "hidden_layer_sizes": [128],
+        "max_iter": 500,
+    }
+
+    import torch
+    import torch.nn as nn
+
+    class PlainAutoencoder(nn.Module):
+        def __init__(self, d: int, z: int):
+            super().__init__()
+            self.encoder = nn.Sequential(nn.Linear(d, 256), nn.ReLU(), nn.Linear(256, z))
+            self.decoder = nn.Sequential(nn.Linear(z, 256), nn.ReLU(), nn.Linear(256, d))
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return self.decoder(self.encoder(x))
+
+    torch.manual_seed(SEED)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    latent_dim = min(64, Xtr.shape[0] - 1)
+    ae = PlainAutoencoder(Xtr.shape[1], latent_dim).to(device)
+    optimizer = torch.optim.Adam(ae.parameters(), lr=1e-3)
+    loss_fn = nn.MSELoss()
+    train_tensor = torch.tensor(Xtr, dtype=torch.float32, device=device)
+
+    for _ in range(200):
+        optimizer.zero_grad(set_to_none=True)
+        loss = loss_fn(ae(train_tensor), train_tensor)
+        loss.backward()
+        optimizer.step()
+
+    ae.eval()
+
+    def encode(x: np.ndarray) -> np.ndarray:
+        with torch.no_grad():
+            return ae.encoder(torch.tensor(x, dtype=torch.float32, device=device)).cpu().numpy()
+
+    ztr = encode(Xtr)
+    zva = encode(Xva)
+    zte = encode(Xte)
+    ae_probe = LogisticRegression(max_iter=2000, random_state=SEED).fit(ztr, ytr)
+    p = ae_probe.predict_proba(zte)[:, 1]
+    predictions["plain_autoencoder"] = p.copy()
+    models["plain_autoencoder"] = {
+        "validation": metrics(yva, ae_probe.predict_proba(zva)[:, 1]),
+        "test": metrics(yte, p),
+        "calibration": {"ece": ece(yte, p), "n_bins": 10},
+        "latent_dim": latent_dim,
+        "epochs": 200,
+    }
+
+    for name, p in predictions.items():
+        models[name]["test_uncertainty"] = bootstrap(yte, p)
+        models[name]["test_permutation_pvalue_auroc"] = permutation_p(yte, p)
+
+    report = {
+        "schema_version": "1.0",
+        "step": 3,
+        "artifact": "reports/baselines_v1.json",
+        "repository_commit": COMMIT,
+        "manifest_sha256": manifest_sha,
+        "benchmark_sha256": benchmark_sha,
+        "strict_accessions": ACCESSIONS,
+        "split": {
+            "train_families": sorted(train_fam),
+            "validation_families": sorted(val_fam),
+            "test_families": sorted(test_fam),
+            "n_train_units": len(train_samples),
+            "n_validation_units": len(val_samples),
+            "n_test_units": len(test_samples),
+        },
+        "selected_gene_count": len(selected_genes),
+        "selected_gene_sha256": hashlib.sha256("\n".join(selected_genes).encode()).hexdigest(),
+        "normalization": "log1p(CPM); StandardScaler fit on training families only",
+        "low_sample_warning": len(test_samples) < 10,
+        "source_provenance": provenance,
+        "models": models,
+        "interpretation_boundary": benchmark["primary_task"]["interpretation_boundary"],
+    }
+
+    REPORT.parent.mkdir(parents=True, exist_ok=True)
+    REPORT.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+
+    if run_checked(["git", "status", "--porcelain", "--untracked-files=all"], cwd=REPO).strip() != "?? reports/baselines_v1.json":
+        halt("Unexpected repository modification after Step 3")
+
+    print("\nSTEP 3 RESULT")
+    for name in ("pca_linear_probe", "plain_mlp", "plain_autoencoder"):
+        t = models[name]["test"]
+        print(
+            f"{name}: AUROC={t['auroc']:.6f}; AUPRC={t['auprc']:.6f}; "
+            f"balanced_accuracy={t['balanced_accuracy']:.6f}; "
+            f"F1_macro={t['f1_macro']:.6f}; Brier={t['brier_score']:.6f}"
+        )
+    print("Test biological units:", len(test_samples))
+    print("Low-sample warning (<10 test units):", len(test_samples) < 10)
+    print("Artifact:", REPORT)
+    print("\nSTEP: 3 — Baseline suite")
+    print("STATUS: DONE")
+    print("ARTIFACT(S): reports/baselines_v1.json")
+    print("METRIC(S): " + "; ".join(
+        f"{m}.AUROC={models[m]['test']['auroc']:.6f}"
+        for m in ("pca_linear_probe", "plain_mlp", "plain_autoencoder")
+    ))
+    print("ISSUES: none")
+    print("NEXT ACTION: awaiting human approval to proceed to Step 4")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Step3Halt as exc:
+        print("\nSTEP: 3 — Baseline suite")
+        print("STATUS: BLOCKED")
+        print("ARTIFACT(S): reports/baselines_v1.json [not created]")
+        print("METRIC(S): none — benchmark did not complete")
+        print(f"ISSUES: {exc}")
+        print("NEXT ACTION: awaiting human approval to proceed to Step 4")
+        raise
+    except Exception as exc:
+        import traceback
+        traceback.print_exc()
+        print("\nSTEP: 3 — Baseline suite")
+        print("STATUS: FAILED")
+        print("ARTIFACT(S): reports/baselines_v1.json [not created]")
+        print("METRIC(S): none — benchmark did not complete")
+        print(f"ISSUES: {type(exc).__name__}: {exc}")
+        print("NEXT ACTION: awaiting human approval to proceed to Step 4")
+        raise

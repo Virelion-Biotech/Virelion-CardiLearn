@@ -14,7 +14,7 @@ from .splitting import SplitIndices, split_frame
 class TrainingResult:
     model: Any
     splits: SplitIndices
-    metrics: dict[str, dict[str, float]]
+    metrics: dict[str, dict[str, float | None]]
     feature_columns: list[str]
     target_column: str
     group_column: str | None

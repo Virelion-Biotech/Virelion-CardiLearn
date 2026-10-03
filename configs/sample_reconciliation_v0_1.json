@@ -1,0 +1,60 @@
+{
+  "version": "0.1",
+  "status": "review_required",
+  "principle": "Only source-supported mappings may become verified. Name-derived candidates are explicitly labeled and cannot unlock the benchmark.",
+  "confidence_levels": ["verified", "high_candidate", "unresolved"],
+  "study_rules": {
+    "GSE185289": {
+      "subject_rule": "Extract the numeric animal identifier from the GEO source name/title; retain the full source name as provenance. Mark as high_candidate until cross-checked against the paper/source metadata.",
+      "condition_rule": "Derive injury state from explicit arp1/mip28 fields: neither=reference; mip28 only=MI; arp1 only=apical_resection; both=double_injury_regenerative_context.",
+      "timepoint_rule": "Use the explicit GEO harvest postnatal day field.",
+      "region_rule": "Use the explicit heart zone field or the title suffix (AZ/BZ/CZ/IZ/RZ) only as a candidate requiring confirmation.",
+      "biological_unit": "animal",
+      "lock_status": "blocked_until_subject_crosscheck"
+    },
+    "GSE130699": {
+      "subject_rule": "No subject identifier is present in the public sample title/design fields reviewed; do not infer independent animals from GSM IDs.",
+      "condition_rule": "GEO sample fields explicitly define P1/P8 surgery age, day 1/day 3 collection, and MI/sham.",
+      "timepoint_rule": "Use explicit developmental surgery age and post-surgical day as separate variables.",
+      "biological_unit": "animal",
+      "lock_status": "blocked_missing_subject_mapping"
+    },
+    "GSE153480": {
+      "subject_rule": "No public subject/animal identifier has been verified from the reviewed sample record; do not infer subjects from GSM IDs.",
+      "condition_rule": "Use explicit P1/P8 surgery age, day 1/day 3 collection, and MI/sham design.",
+      "timepoint_rule": "Keep developmental surgery age separate from post-surgical day.",
+      "biological_unit": "animal",
+      "lock_status": "blocked_missing_subject_mapping"
+    },
+    "GSE217494": {
+      "subject_rule": "Collapse paired GEX_sampleN and Ab_sampleN measurements onto the same heart/sample family; do not treat the 44 GEO records as 44 biological subjects. Underlying cohort size is 22 hearts.",
+      "condition_rule": "Recover from the study's cell/sample metadata; do not infer from GEO record order.",
+      "biological_unit": "human_heart",
+      "lock_status": "blocked_until_sample_condition_mapping"
+    },
+    "GSE135310": {
+      "subject_rule": "Pooled multiplexed datasets may contain multiple biological animals; public series-level sample labels are insufficient for a safe subject split.",
+      "condition_rule": "Recover from hashtag/sample metadata and study documentation.",
+      "biological_unit": "animal",
+      "lock_status": "blocked_until_pool_demultiplex_reconciliation"
+    },
+    "GSE106472": {
+      "subject_rule": "Three series samples are distinct experimental samples, but biological subject identity is not verified in the public series record.",
+      "condition_rule": "Keep WT MI, IRF3KO MI, and WT no-MI as distinct states; genotype must not be collapsed into injury.",
+      "biological_unit": "animal_or_sample_unknown",
+      "lock_status": "blocked_subject_mapping_and_confounding"
+    },
+    "GSE216211": {
+      "subject_rule": "Three public GEO records represent Sham, MI, and MI-E experimental groups; biological replicate count/identity is not established by series titles alone.",
+      "condition_rule": "Keep Sham, MI, and MI-E distinct.",
+      "biological_unit": "animal_or_pool_unknown",
+      "lock_status": "blocked_until_replicate_reconciliation"
+    },
+    "GSE269054": {
+      "subject_rule": "Recover subject identity from sample-level metadata before any cross-study claim.",
+      "condition_rule": "Keep permanent MI, I/R-30, and traumatic needle injury separate; healthy/reference is separate.",
+      "biological_unit": "animal_or_patient",
+      "lock_status": "blocked_until_subject_and_injury_mapping"
+    }
+  }
+}

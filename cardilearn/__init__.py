@@ -1,10 +1,126 @@
-"""Virelion CardiLearn: reproducible ML for real cardiac datasets."""
+"""Virelion CardiLearn: reproducible ML for cardiac datasets."""
 
-__version__ = "0.3.0"
+__version__ = "0.4.1"
 
+from .backbones import EXTERNAL_ENCODERS, CallableEncoderAdapter, EncoderAdapter, ExternalEncoderSpec, known_external_encoder_names, wrap_object
+from .benchmark_protocol import BenchmarkSpec, compare_seeded_scores, rank_models, summarize_repeated_scores
+from .config_loader import ConfigError, load_yaml_config, validate_reproducibility_config
 from .dataset_card import DatasetCard
+from .fusion import align_modalities, concatenate_embeddings
+from .modalities import OmicsMatrix, Waveform
 from .registry import ModelRegistry
+from .reproducibility import (
+    ReproducibilityManifest,
+    config_fingerprint,
+    dataframe_fingerprint,
+    fingerprint_ids,
+    fingerprint_mapping,
+    load_manifest,
+    make_manifest,
+    save_manifest,
+)
 from .schema import DatasetSpec, FeatureManifest
+from .trajectory import TemporalSplit, forward_group_split, trajectory_spearman
 from .validation import IntegrityReport, validate_dataset
 
-__all__ = ["DatasetCard", "DatasetSpec", "FeatureManifest", "IntegrityReport", "ModelRegistry", "validate_dataset"]
+try:  # pragma: no cover - depends on optional torch installation
+    from .objectives import ObjectiveSchedule, ObjectiveStage, ObjectiveWeights, cosine_alignment_loss, masked_log1p_loss, negative_binomial_nll, vicreg_loss
+    from .conserved import ConservedGeneIdentity, GeneGroupMap, functional_group_pool, validate_gene_group_map
+    from .spatial import NeighborhoodAggregator, SpatialGraph, knn_graph
+except ModuleNotFoundError as exc:
+    if exc.name != "torch":
+        raise
+    ObjectiveSchedule = None
+    ObjectiveStage = None
+    ObjectiveWeights = None
+    cosine_alignment_loss = None
+    masked_log1p_loss = None
+    negative_binomial_nll = None
+    vicreg_loss = None
+    ConservedGeneIdentity = None
+    GeneGroupMap = None
+    functional_group_pool = None
+    validate_gene_group_map = None
+    NeighborhoodAggregator = None
+    SpatialGraph = None
+    knn_graph = None
+
+try:  # pragma: no cover - depends on optional torch installation
+    from .multimodal import CardiLearnX, CardiacFusionCore, SignalPatchEncoder, modality_dropout
+except ModuleNotFoundError as exc:
+    if exc.name != "torch":
+        raise
+    CardiLearnX = None
+    CardiacFusionCore = None
+    SignalPatchEncoder = None
+    modality_dropout = None
+
+try:  # pragma: no cover - depends on optional torch installation
+    from .torch_training import CategoryEncoder, TorchTrainConfig, fit_research_model, load_checkpoint, save_checkpoint
+except ModuleNotFoundError as exc:
+    if exc.name != "torch":
+        raise
+    CategoryEncoder = None
+    TorchTrainConfig = None
+    fit_research_model = None
+    load_checkpoint = None
+    save_checkpoint = None
+
+try:  # pragma: no cover - depends on optional torch installation
+    from .research_model import CardiLearnResearch, FactorizedNBDecoder, GeneValueEncoder, GRNProgramRouter, ProgramBackbone
+except ModuleNotFoundError as exc:
+    if exc.name != "torch":
+        raise
+    CardiLearnResearch = None
+    FactorizedNBDecoder = None
+    GeneValueEncoder = None
+    GRNProgramRouter = None
+    ProgramBackbone = None
+
+__all__ = [
+    "BenchmarkSpec",
+    "CardiacFusionCore",
+    "ConservedGeneIdentity", "GeneGroupMap", "functional_group_pool", "validate_gene_group_map",
+    "CardiLearnResearch",
+    "CardiLearnX",
+    "CallableEncoderAdapter",
+    "ConfigError",
+    "DatasetCard",
+    "DatasetSpec",
+    "EncoderAdapter",
+    "EXTERNAL_ENCODERS",
+    "ExternalEncoderSpec",
+    "FactorizedNBDecoder",
+    "FeatureManifest",
+    "GRNProgramRouter",
+    "GeneValueEncoder",
+    "IntegrityReport",
+    "ModelRegistry",
+    "OmicsMatrix",
+    "ObjectiveSchedule", "ObjectiveStage", "ObjectiveWeights",    "ProgramBackbone",
+    "ReproducibilityManifest",
+    "SignalPatchEncoder",
+    "SpatialGraph", "NeighborhoodAggregator", "knn_graph",
+    "Waveform",
+    "align_modalities",
+    "compare_seeded_scores",
+    "config_fingerprint",
+    "concatenate_embeddings",
+    "cosine_alignment_loss",
+    "dataframe_fingerprint",
+    "fingerprint_ids",
+    "fingerprint_mapping",
+    "known_external_encoder_names",
+    "load_manifest",
+    "load_yaml_config",
+    "make_manifest",
+    "masked_log1p_loss", "negative_binomial_nll", "vicreg_loss",    "modality_dropout",
+    "rank_models",
+    "save_manifest",
+    "summarize_repeated_scores",
+    "TemporalSplit", "forward_group_split", "trajectory_spearman",
+    "validate_dataset",
+    "validate_reproducibility_config",
+    "wrap_object",
+    "CategoryEncoder", "TorchTrainConfig", "fit_research_model", "load_checkpoint", "save_checkpoint",
+]

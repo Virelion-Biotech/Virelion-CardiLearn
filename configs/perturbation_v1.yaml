@@ -1,0 +1,24 @@
+version: 1
+model:
+  latent_dim: 128
+  n_perturbations: 128
+  n_perturbation_types: 16
+  metadata_dim: 64
+  hidden_dim: 128
+training:
+  target: delta_z
+  losses:
+    delta_mse: 1.0
+    direction: 0.25
+    gaussian_nll: 0.25
+validation:
+  primary: delta_mse
+  secondary:
+    - cosine_similarity
+    - direction_accuracy
+  split_policy: held_out_perturbation_or_study
+scientific_guardrails:
+  causal_claims_require_independent_experimental_validation: true
+  fit_preprocessing_on_train_only: true
+  no_random_cell_level_split_when_biological_units_are_repeated: true
+  report_seen_and_unseen_perturbation_performance_separately: true

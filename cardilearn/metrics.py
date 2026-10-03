@@ -16,7 +16,12 @@ from sklearn.metrics import (
 )
 
 
-def classification_metrics(y_true, y_pred, y_score=None) -> dict[str, float]:
+def _finite_or_none(value: float) -> float | None:
+    value = float(value)
+    return value if np.isfinite(value) else None
+
+
+def classification_metrics(y_true, y_pred, y_score=None) -> dict[str, float | None]:
     """Return robust classification metrics; AUROC is included when computable."""
 
     result = {
@@ -29,23 +34,23 @@ def classification_metrics(y_true, y_pred, y_score=None) -> dict[str, float]:
             score = np.asarray(y_score)
             if score.ndim == 2 and score.shape[1] == 2:
                 score = score[:, 1]
-            result["auroc"] = float(roc_auc_score(y_true, score))
+            result["auroc"] = _finite_or_none(roc_auc_score(y_true, score))
         except ValueError:
-            result["auroc"] = float("nan")
+            result["auroc"] = None
     return result
 
 
-def regression_metrics(y_true, y_pred) -> dict[str, float]:
+def regression_metrics(y_true, y_pred) -> dict[str, float | None]:
     """Return standard regression metrics."""
 
     return {
         "mae": float(mean_absolute_error(y_true, y_pred)),
         "rmse": float(np.sqrt(mean_squared_error(y_true, y_pred))),
-        "r2": float(r2_score(y_true, y_pred)),
+        "r2": _finite_or_none(r2_score(y_true, y_pred)),
     }
 
 
-def evaluate(estimator, X, y, task: str) -> dict[str, float]:
+def evaluate(estimator, X, y, task: str) -> dict[str, float | None]:
     """Evaluate a fitted estimator without mutating it."""
 
     predictions = estimator.predict(X)

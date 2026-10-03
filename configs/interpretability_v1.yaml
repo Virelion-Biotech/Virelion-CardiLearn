@@ -1,0 +1,47 @@
+interpretability:
+  version: 1
+  scientific_policy:
+    attention_is_not_causal: true
+    require_independent_validation_for_mechanistic_claims: true
+    never_fit_on_held_out_test_data: true
+
+  latent_analysis:
+    method: integrated_gradients
+    baseline: zero
+    steps: 32
+    aggregate: mean_signed
+    top_k: 50
+    supplementary_program_method: attention_summary
+
+  attribution:
+    methods:
+      - integrated_gradients
+      - feature_masking
+      - permutation_sensitivity
+    masking_baseline: 0.0
+    permutation_repeats: 5
+    seed: 42
+
+  enrichment:
+    methods:
+      - overrepresentation
+      - preranked_gsea
+    foreground_top_k: 100
+    multiple_testing: benjamini_hochberg
+
+  counterfactual:
+    method: ranked_gene_masking
+    baseline: 0.0
+    report_incremental_masks: true
+
+  cross_species:
+    ortholog_source: explicit_mapping_table
+    minimum_species_support: 2
+    report_direction_concordance: true
+    require_ortholog_group_mapping: true
+
+  outputs:
+    latent_gene_scores: artifacts/interpretability/latent_gene_scores.parquet
+    enrichment: artifacts/interpretability/enrichment.csv
+    counterfactuals: artifacts/interpretability/counterfactuals.csv
+    conserved_programs: artifacts/interpretability/conserved_programs.csv

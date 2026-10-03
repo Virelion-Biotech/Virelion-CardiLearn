@@ -1,0 +1,51 @@
+name: cardi_learn_proto_v0_1
+
+model:
+  gene_dim: 64
+  n_programs: 16
+  shared_dim: 128
+  private_dim: 32
+  attention_heads: 4
+
+smoke_data:
+  n_studies: 6
+  subjects_per_study: 2
+  samples_per_subject: 2
+  cells_per_sample: 50
+  n_genes: 256
+  n_species: 3
+  n_assays: 2
+  seed: 42
+
+stress_data:
+  n_studies: 8
+  subjects_per_study: 4
+  samples_per_subject: 2
+  cells_per_sample: 150
+  n_genes: 2000
+  n_species: 3
+  n_assays: 2
+  seed: 42
+
+training:
+  batch_size: 32
+  epochs: 75
+  learning_rate: 0.0003
+  weight_decay: 0.0001
+  mask_fraction: 0.15
+  grad_clip: 5.0
+
+loss:
+  reconstruction: 1.0
+  invariance: 0.25
+  anti_collapse: 0.10
+  cell_type: 0.50
+  maturation: 1.0
+  injury: 0.50
+
+experimental_policy:
+  regeneration_stage: after_core_representation
+  cross_species_stage: after_regeneration
+  transition_stage: after_core_and_regeneration
+  primary_split: study
+  protected_test: true
