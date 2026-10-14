@@ -2,6 +2,21 @@
 
 CardiLearn is a Python research codebase for cardiac transcriptomic representation learning and downstream prediction. It contains a prototype implementation and a larger transcriptome-scale research architecture.
 
+
+<!-- VALIDATION_PRODUCT_STATUS:BEGIN -->
+## Validation and product completion status
+
+**Reviewed 2026-10-14; implementation base `1b8ad6e5ca9f`.** **Status: Research architectures and locked metadata infrastructure; empirical staged gates incomplete.** This is an evidence-backed scope assessment, not a percentage-complete estimate or a declaration that the product is finished.
+
+| Area | Current evidence / remaining gate |
+|---|---|
+| Software / operational checks | Automated test sources and CI definitions are present; this documentation audit does not report a new algorithm/data-validation run. |
+| Scientific or domain evidence | The current manifest explicitly locks eligible tracks and exclusions rather than inventing biological IDs. Raw-count rescue and real-data benchmark runners exist; their presence does not establish a trained cross-study or paired-modality result. |
+| Remaining for the declared product scope | Materialize/hash strict count sources and finish raw-read rescue for eligible cohorts; execute locked simple baselines before staged encoder evaluation; establish subject/study-family-safe independent results and real paired modalities before fusion; obtain independently labeled task/calibration evidence. Follow the existing AGENTS.md stage gates; this status update does not advance a scientific stage. |
+
+Evidence and limits: [repository report](docs/VALIDATION_READINESS.md). The [organization status index](https://github.com/Virelion-Biotech/Virelion-HeartTwin/blob/main/docs/STACK_VALIDATION_STATUS.md) separates software, numerical, data-readiness and empirical qualification. Code/schema execution or a completed download is not a substitute for endpoint-specific validation.
+<!-- VALIDATION_PRODUCT_STATUS:END -->
+
 ## What it contains
 
 - Transcriptome-scale gene inputs.
