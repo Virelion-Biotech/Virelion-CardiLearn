@@ -1,0 +1,4 @@
+# Exact Gitleaks false-positive fingerprints: ordinary maintenance guidance mentioning API rate limits and missing credentials, not a token.
+1b8ad6e5ca9fc9a22a0bef6faea32486df9d88a3:AGENTS.md:generic-api-key:23
+3fca213984878a99521d701840a007ace97900bb:AGENTS.md:generic-api-key:23
+7780a1e4f1db892bd3d60fbf66d08cb8a6b3e037:AGENTS.md:generic-api-key:23
