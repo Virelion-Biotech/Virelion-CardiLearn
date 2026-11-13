@@ -8,16 +8,11 @@ updates:
       time: "02:30"
       timezone: "Asia/Riyadh"
     open-pull-requests-limit: 5
-    labels:
-      - dependencies
+    labels: [dependencies]
     groups:
       nonbreaking-python:
-        patterns:
-          - "*"
-        update-types:
-          - "minor"
-          - "patch"
- 
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -26,12 +21,8 @@ updates:
       time: "03:00"
       timezone: "Asia/Riyadh"
     open-pull-requests-limit: 5
-    labels:
-      - dependencies
+    labels: [dependencies]
     groups:
       nonbreaking-actions:
-        patterns:
-          - "*"
-        update-types:
-          - "minor"
-          - "patch"
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
